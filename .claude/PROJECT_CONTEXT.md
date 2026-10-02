@@ -199,8 +199,10 @@ MIT); first release v26.10.0.
   serve.lock).
 - `Tests/SlipstreamMenubarCoreTests/Fixtures/metrics.txt`: a real `/metrics` capture (also used by
   the fake server).
-- `Resources/Info.plist`: bundle id `local.slipstream.menubar`, `LSUIElement`, macOS 15. The version
-  is set by `build-app.sh` (`MARKETING_VERSION`; `CFBundleVersion` = `git describe`).
+- `Resources/Info.plist`: bundle id `local.slipstream.menubar`, `LSUIElement`, macOS 15, placeholder
+  version `0.0.0`. `build-app.sh` sets the real one: `MARKETING_VERSION` (from CI) or else the
+  latest `v*` tag, so local `make app` builds also show 26.10.0 in Finder. `CFBundleVersion` =
+  `git describe`.
 - `Assets/MenuBarItem.png`, `Assets/StatsPanel.png`: README screenshots taken by the user.
 - `scripts/make-icon.swift` → `Resources/AppIcon.icns` (committed, 91 KB; `CFBundleIconFile
   AppIcon`): the web UI's bolt as a white outline, no glow (user's choice), on an indigo→violet

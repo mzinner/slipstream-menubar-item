@@ -58,21 +58,31 @@ struct StatsView: View {
 
     /// Same as the content's side padding.
     static let edgeMargin: CGFloat = 16
+    /// How far up the bottom fade reaches while there is more to scroll to.
+    static let fadeHeight: CGFloat = 30
+
+    @State private var moreBelow = false
 
     var body: some View {
         ScrollView {
             StatsContent(server: server, stats: stats)
                 .padding(.bottom, Self.edgeMargin)
         }
-        // Fade out over the bottom margin, so a card cut off by the window edge
-        // dissolves instead of ending in a hard, square-cornered line.
+        .onScrollGeometryChange(for: Bool.self) { geometry in
+            geometry.contentOffset.y + geometry.containerSize.height < geometry.contentSize.height - 1
+        } action: { _, hasMore in
+            moreBelow = hasMore
+        }
+        // While content continues below the window edge, fade it out so the cut-off
+        // card hints that the panel scrolls; at the end the last card shows in full.
         .mask {
             VStack(spacing: 0) {
                 Rectangle()
                 LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
-                    .frame(height: Self.edgeMargin)
+                    .frame(height: moreBelow ? Self.fadeHeight : 0)
             }
         }
+        .animation(.easeOut(duration: 0.2), value: moreBelow)
         .frame(minWidth: 380)
     }
 }

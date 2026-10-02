@@ -85,6 +85,7 @@ MIT); first release v26.10.0.
   (renders the panel and menu bar samples to PNGs).
 - `.github/workflows/release.yml`: `v*` tag → test, build with `MARKETING_VERSION`, zip and SHA-256
   to a GitHub release.
+- `.claude/commands/checkpoint.md`: the `/checkpoint` command that maintains this file (committed).
 
 ## Next steps
 
@@ -127,7 +128,8 @@ MIT); first release v26.10.0.
 
 ```
 $ git status --short
-?? .claude/
 $ git branch --show-current
 main
 ```
+
+Clean working tree; `.claude/PROJECT_CONTEXT.md` and `.claude/commands/checkpoint.md` are committed.

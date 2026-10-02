@@ -88,7 +88,7 @@ MIT); first release v26.10.0.
 8. Tag a new app release (e.g. v26.10.1) to ship the work since v26.10.0. Not asked for yet.
 9. Fork: the launcher now refuses the Splash 1.0 packages (minimal version, finished
    2026-10-02): `923c9fa` on `main`, and the same change alone on `fix/v2-only-packages`
-   (`b2d9640`, on `upstream/main`) for a later PR. Not pushed and not released yet. Left out on
+   (`b2d9640`, on `upstream/main`) for a later PR. Pushed; released as fork v26.10.2. Left out on
    purpose: `ci.yml`'s model list, `dev/native.mk` vision fixtures, tests that use the old names as
    example ids, `DEVELOPMENT.md`, benchmarks.
 10. `target/draft-vocab.bin` is not produced by the GGUF path (optional; it would speed up the MTP
@@ -125,11 +125,9 @@ MIT); first release v26.10.0.
 
 ```
 $ git status --short
- M .claude/PROJECT_CONTEXT.md
-?? .claude/context/
 $ git branch --show-current
 main
 ```
 
-At checkpoint time: the context was split into this index and `.claude/context/*.md`; those files
-are uncommitted. Everything else (up to `53ad728`) is committed and pushed to both remotes.
+At checkpoint time: clean; everything is committed and pushed to both remotes. The Slipstream fork's
+`main` and `fix/v2-only-packages` are pushed, and v26.10.2 is released.

@@ -17,14 +17,15 @@ enum StatusItemImage {
     private static let lineHeight: CGFloat = 10.2
 
     /// Shown in place of every value while the layout is being reviewed; nil for live values.
-    static let reviewValue: Double? = 400
+    static let reviewValue: Double? = nil
     /// Values above this are shown as this, which is what the column is sized for.
     static let maximumShown: Double = 400
 
     /// Width of the widest readout, so the item never changes size as values change.
     private static let readoutWidth: CGFloat = {
-        let widest = NSAttributedString(string: "↑" + compact(maximumShown), attributes: [.font: font])
-        return ceil(widest.size().width)
+        // The longest forms below the maximum: three digits, or two with a decimal.
+        let candidates = ["↑" + compact(maximumShown), "↓" + compact(99.9)]
+        return ceil(candidates.map { NSAttributedString(string: $0, attributes: [.font: font]).size().width }.max()!)
     }()
 
     /// - Parameter rates: prompt and output tokens per second; nil shows the bolt alone.

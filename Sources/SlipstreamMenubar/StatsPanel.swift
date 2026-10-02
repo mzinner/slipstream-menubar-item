@@ -56,13 +56,23 @@ struct StatsView: View {
     @ObservedObject var server: ServerController
     @ObservedObject var stats: StatsModel
 
+    /// Same as the content's side padding.
+    static let edgeMargin: CGFloat = 16
+
     var body: some View {
         ScrollView {
             StatsContent(server: server, stats: stats)
+                .padding(.bottom, Self.edgeMargin)
         }
-        // Clip the scrolling content short of the window's bottom edge, by the same
-        // margin the cards keep from the sides.
-        .padding(.bottom, 16)
+        // Fade out over the bottom margin, so a card cut off by the window edge
+        // dissolves instead of ending in a hard, square-cornered line.
+        .mask {
+            VStack(spacing: 0) {
+                Rectangle()
+                LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
+                    .frame(height: Self.edgeMargin)
+            }
+        }
         .frame(minWidth: 380)
     }
 }

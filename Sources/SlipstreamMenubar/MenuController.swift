@@ -92,7 +92,7 @@ final class MenuController: NSObject, NSMenuDelegate {
 
         var detail: [String] = []
         if let model = server.model { detail.append((model as NSString).lastPathComponent) }
-        if status.isActive { detail.append(":\(server.port)") }
+        if status.isActive { detail.append(server.listensOnNetwork ? "network :\(server.port)" : ":\(server.port)") }
         if case .failed(let message) = status { detail.append(message) }
         detailItem.title = detail.joined(separator: " · ")
         detailItem.isHidden = detail.isEmpty

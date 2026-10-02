@@ -16,6 +16,8 @@ public struct ServerConfig: Codable, Equatable, Sendable {
     public var maxMemory: String
     public var allowedHosts: [String]
     public var noWebUI: Bool
+    /// Listen on all interfaces (`--host 0.0.0.0`) instead of 127.0.0.1 only.
+    public var listenOnNetwork: Bool
     /// Start the server when the app launches if it is not already running.
     public var startServerOnLaunch: Bool
 
@@ -27,6 +29,7 @@ public struct ServerConfig: Codable, Equatable, Sendable {
         maxMemory: String = "",
         allowedHosts: [String] = [],
         noWebUI: Bool = false,
+        listenOnNetwork: Bool = false,
         startServerOnLaunch: Bool = false
     ) {
         self.repoPath = repoPath
@@ -36,8 +39,29 @@ public struct ServerConfig: Codable, Equatable, Sendable {
         self.maxMemory = maxMemory
         self.allowedHosts = allowedHosts
         self.noWebUI = noWebUI
+        self.listenOnNetwork = listenOnNetwork
         self.startServerOnLaunch = startServerOnLaunch
     }
+
+    /// Settings saved by an older version lack newer keys; those take their defaults.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = ServerConfig()
+        repoPath = try container.decodeIfPresent(String.self, forKey: .repoPath) ?? defaults.repoPath
+        model = try container.decodeIfPresent(String.self, forKey: .model) ?? defaults.model
+        port = try container.decodeIfPresent(Int.self, forKey: .port) ?? defaults.port
+        maxContext = try container.decodeIfPresent(String.self, forKey: .maxContext) ?? defaults.maxContext
+        maxMemory = try container.decodeIfPresent(String.self, forKey: .maxMemory) ?? defaults.maxMemory
+        allowedHosts = try container.decodeIfPresent([String].self, forKey: .allowedHosts) ?? defaults.allowedHosts
+        noWebUI = try container.decodeIfPresent(Bool.self, forKey: .noWebUI) ?? defaults.noWebUI
+        listenOnNetwork = try container.decodeIfPresent(Bool.self, forKey: .listenOnNetwork)
+            ?? defaults.listenOnNetwork
+        startServerOnLaunch = try container.decodeIfPresent(Bool.self, forKey: .startServerOnLaunch)
+            ?? defaults.startServerOnLaunch
+    }
+
+    /// The address `--host` gets.
+    public var host: String { listenOnNetwork ? "0.0.0.0" : "127.0.0.1" }
 
     public static func defaultRepoPath() -> String {
         let home = FileManager.default.homeDirectoryForCurrentUser
@@ -51,6 +75,8 @@ public struct ServerConfig: Codable, Equatable, Sendable {
     /// Arguments after the launcher path.
     public func serveArguments() -> [String] {
         var arguments = ["serve", "--model", (model as NSString).expandingTildeInPath, "--port", String(port)]
+        // The default needs no flag, which keeps launchers without --host working.
+        if listenOnNetwork { arguments += ["--host", host] }
         let context = maxContext.trimmingCharacters(in: .whitespaces)
         if !context.isEmpty { arguments += ["--max-context", context] }
         let memory = maxMemory.trimmingCharacters(in: .whitespaces)
@@ -62,6 +88,13 @@ public struct ServerConfig: Codable, Equatable, Sendable {
         return arguments
     }
 
+    /// Whether the checkout's launcher accepts `serve --host` (npanj/slipstream#5).
+    public func launcherSupportsHost(fileManager: FileManager = .default) -> Bool {
+        let launcher = repoURL.appendingPathComponent("install/launcher.py")
+        guard let source = try? String(contentsOf: launcher, encoding: .utf8) else { return false }
+        return source.contains("\"--host\"")
+    }
+
     /// Problems that would make `slipstream serve` fail immediately, for the settings window.
     public func validationErrors(fileManager: FileManager = .default) -> [String] {
         var errors: [String] = []
@@ -70,6 +103,9 @@ public struct ServerConfig: Codable, Equatable, Sendable {
         }
         if model.trimmingCharacters(in: .whitespaces).isEmpty {
             errors.append("No model selected")
+        }
+        if listenOnNetwork, !launcherSupportsHost(fileManager: fileManager) {
+            errors.append("Listening on the network needs a Slipstream checkout whose launcher has `serve --host`")
         }
         if !(1...65535).contains(port) {
             errors.append("Port must be between 1 and 65535")

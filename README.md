@@ -71,10 +71,14 @@ Keychain.
 | Max context | `--max-context` (empty = auto) |
 | Max memory | `--max-memory` (empty = auto) |
 | API key | `SLIPSTREAM_V2_API_KEY` in the server's environment; also sent by the app to read `/metrics` |
-| Allowed hosts | `--allowed-host`, repeated |
+| Listen on the network | `--host 0.0.0.0` (off: 127.0.0.1 only); needs a launcher with `serve --host` ([npanj/slipstream#5](https://github.com/npanj/slipstream/pull/5)) |
+| Allowed hosts | `--allowed-host`, repeated: extra names clients may use, such as `<mac>.local` |
 | Disable web UI | `--no-webui` |
 | Start the server when the app launches | only if none is running already |
 | Open at login | a login item via `SMAppService` (needs the app in /Applications) |
+
+With the network option on, other machines connect to `http://<this Mac's IP>:<port>`;
+Settings lists the addresses and warns while no API key is set. Traffic is plain HTTP.
 
 Changes take effect when the server restarts; Settings offers Save & Restart while one
 is running.

@@ -93,7 +93,19 @@ private struct SettingsView: View {
                         }
                         .disabled(apiKey.isEmpty)
                     }
-                    TextField("Allowed hosts", text: $allowedHosts, prompt: Text("comma separated"))
+                    Toggle("Listen on the network", isOn: $config.listenOnNetwork)
+                    if config.listenOnNetwork {
+                        NetworkNotes(port: port, hasKey: !apiKey.isEmpty)
+                    } else {
+                        Text("Only this Mac can connect (127.0.0.1).")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        TextField("Allowed hosts", text: $allowedHosts, prompt: Text("comma separated"))
+                        Text("Extra names clients may use in URLs, e.g. this Mac's .local name. "
+                             + "Addresses (127.0.0.1, its IP) always work.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                     Toggle("Disable web UI", isOn: $config.noWebUI)
                 }
                 SwiftUI.Section("App") {
@@ -173,6 +185,34 @@ private struct PathField: View {
             if let help {
                 Text(help).font(.caption).foregroundStyle(.secondary)
             }
+        }
+    }
+}
+
+/// Where other machines can reach the server, and a warning without an API key.
+private struct NetworkNotes: View {
+    let port: String
+    let hasKey: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if !hasKey {
+                Label("Without an API key, anyone on your network can use the server.",
+                      systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption).foregroundStyle(.orange)
+            }
+            let addresses = NetworkAddresses.ipv4()
+            if !addresses.isEmpty {
+                Text("Other machines connect to " + addresses.map { "http://\($0):\(port)" }
+                    .joined(separator: " or "))
+                    .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+            }
+            if let name = NetworkAddresses.localHostName() {
+                Text("To use http://\(name):\(port), add \(name) to Allowed hosts.")
+                    .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+            }
+            Text("Traffic is not encrypted. macOS may ask whether Python may accept incoming connections.")
+                .font(.caption).foregroundStyle(.secondary)
         }
     }
 }

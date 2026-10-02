@@ -133,7 +133,15 @@ private struct ServerHeader: View {
             }
             HStack(spacing: 12) {
                 if server.status.isActive {
-                    Text(verbatim: "127.0.0.1:\(server.port)")
+                    if server.listensOnNetwork {
+                        Label {
+                            Text(verbatim: "network · port \(server.port)")
+                        } icon: {
+                            Image(systemName: "network")
+                        }
+                    } else {
+                        Text(verbatim: "127.0.0.1:\(server.port)")
+                    }
                 }
                 if let maximum = stats.maximumContextTokens {
                     Text(verbatim: "context limit \(Format.contextTokens(maximum))")

@@ -10,6 +10,21 @@ public struct ServeLock: Codable, Equatable, Sendable {
     public var pid: Int32
     public var model: String
     public var port: Int
+    /// Recorded by launchers with `serve --host`; nil from older ones (127.0.0.1).
+    public var host: String?
+
+    public init(pid: Int32, model: String, port: Int, host: String? = nil) {
+        self.pid = pid
+        self.model = model
+        self.port = port
+        self.host = host
+    }
+
+    /// True when the server accepts connections from other machines.
+    public var listensOnNetwork: Bool {
+        guard let host else { return false }
+        return !["127.0.0.1", "localhost", "::1"].contains(host)
+    }
 
     public static func read(from url: URL) -> ServeLock? {
         guard let data = try? Data(contentsOf: url), !data.isEmpty else { return nil }

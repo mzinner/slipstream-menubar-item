@@ -192,3 +192,54 @@ final class SystemSamplerTests: XCTestCase {
         if let gpu = second.gpuUsage { XCTAssertTrue((0...1).contains(gpu)) }
     }
 }
+
+final class NetworkAccessTests: XCTestCase {
+    func testOlderConfigFilesLoadWithDefaultsForNewKeys() throws {
+        let json = #"{"repoPath":"/r","model":"/m","port":8090,"maxContext":"","maxMemory":"","allowedHosts":[],"noWebUI":false,"startServerOnLaunch":true}"#
+        let config = try JSONDecoder().decode(ServerConfig.self, from: Data(json.utf8))
+        XCTAssertFalse(config.listenOnNetwork)
+        XCTAssertTrue(config.startServerOnLaunch)
+        XCTAssertEqual(config.model, "/m")
+    }
+
+    func testHostIsPassedOnlyWhenListeningOnTheNetwork() {
+        var config = ServerConfig(repoPath: "/r", model: "/m", port: 8090)
+        XCTAssertFalse(config.serveArguments().contains("--host"))
+        config.listenOnNetwork = true
+        let arguments = config.serveArguments()
+        XCTAssertEqual(arguments[arguments.firstIndex(of: "--host")! + 1], "0.0.0.0")
+    }
+
+    func testLockHostAndNetworkFlag() throws {
+        let old = try JSONDecoder().decode(ServeLock.self, from: Data(#"{"pid":1,"model":"m","port":8090}"#.utf8))
+        XCTAssertNil(old.host)
+        XCTAssertFalse(old.listensOnNetwork)
+        let network = try JSONDecoder().decode(
+            ServeLock.self, from: Data(#"{"pid":1,"model":"m","port":8090,"host":"0.0.0.0"}"#.utf8))
+        XCTAssertTrue(network.listensOnNetwork)
+        XCTAssertFalse(ServeLock(pid: 1, model: "m", port: 1, host: "127.0.0.1").listensOnNetwork)
+    }
+
+    func testLauncherCapabilityCheck() throws {
+        let repo = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: repo) }
+        try FileManager.default.createDirectory(at: repo.appendingPathComponent("install"),
+                                                withIntermediateDirectories: true)
+        let launcher = repo.appendingPathComponent("install/launcher.py")
+        var config = ServerConfig(repoPath: repo.path, model: "/m", listenOnNetwork: true)
+        try Data(#"server.add_argument("--port")"#.utf8).write(to: launcher)
+        XCTAssertFalse(config.launcherSupportsHost())
+        XCTAssertTrue(config.validationErrors().contains { $0.contains("--host") })
+        try Data(#"server.add_argument("--host", default="127.0.0.1")"#.utf8).write(to: launcher)
+        XCTAssertTrue(config.launcherSupportsHost())
+        config.listenOnNetwork = false
+        XCTAssertFalse(config.validationErrors().contains { $0.contains("--host") })
+    }
+
+    func testAddressesExcludeLoopback() {
+        let addresses = NetworkAddresses.ipv4()
+        XCTAssertFalse(addresses.contains("127.0.0.1"))
+        XCTAssertTrue(addresses.allSatisfy { $0.split(separator: ".").count == 4 })
+        XCTAssertTrue(NetworkAddresses.localHostName()?.hasSuffix(".local") ?? true)
+    }
+}

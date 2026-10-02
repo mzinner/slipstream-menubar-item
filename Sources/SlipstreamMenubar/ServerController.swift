@@ -18,6 +18,8 @@ final class ServerController: ObservableObject {
     @Published private(set) var model: String?
     /// Running, but not started by this app (or an earlier run of it).
     @Published private(set) var external = false
+    /// The running server accepts connections from other machines.
+    @Published private(set) var listensOnNetwork = false
 
     var config: ServerConfig {
         didSet { if !status.isActive { port = config.port } }
@@ -93,6 +95,7 @@ final class ServerController: ObservableObject {
         port = probePort
         model = livePid != nil ? (lock?.model ?? config.model) : nil
         external = livePid == nil ? readyOK : !ours
+        listensOnNetwork = livePid != nil && (lock?.listensOnNetwork ?? false)
         if status != resolved { status = resolved }
     }
 

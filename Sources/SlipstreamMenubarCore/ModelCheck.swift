@@ -9,6 +9,8 @@ public enum ModelCheck {
     public static let packageFormats: [String: Int] = [
         "splash-packed-q4-qwen4exp": 5,
     ]
+    /// More than one model's worth: a Qwen3.8-Flash-Next download is about 105 GB.
+    public static let maximumSize: Int64 = 150_000_000_000
     /// The only GGUF architecture the converter turns into a package.
     public static let ggufArchitecture = "qwen4exp"
 
@@ -30,7 +32,18 @@ public enum ModelCheck {
         let paths = files.compactMap { $0["path"] as? String }
         let size = files.compactMap { ($0["size"] as? NSNumber)?.int64Value }.reduce(0, +)
         if paths.contains("manifest.json") { return (.package, size) }
-        let shards = paths.filter { $0.hasSuffix(".gguf") && !$0.hasPrefix("MTP/") }.sorted()
+        let ggufs = paths.filter { $0.hasSuffix(".gguf") && !$0.hasPrefix("MTP/") }
+        // Collections (unsloth, AtomicChat, ...) keep one quantisation per sub-folder; the
+        // converter takes one model's shards from the folder it is given.
+        let shards = ggufs.filter { !$0.contains("/") }.sorted()
+        if shards.isEmpty, !ggufs.isEmpty {
+            return (.unsupported("it keeps several GGUF variants in sub-folders; Slipstream needs one "
+                                 + "Qwen3.8-Flash-Next model at the top level of the repository"), size)
+        }
+        if size > maximumSize {
+            return (.unsupported(String(format: "it is %.0f GB; a Qwen3.8-Flash-Next model is about 105 GB",
+                                        Double(size) / 1e9)), size)
+        }
         if let first = shards.first {
             return (.gguf(firstShard: first, hasMTP: paths.contains(ModelSpec.mtpDraftHead.path)), size)
         }

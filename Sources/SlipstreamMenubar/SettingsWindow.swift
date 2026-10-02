@@ -11,14 +11,17 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     private let save: (ServerConfig, String?, _ restart: Bool) -> Void
     private let install: () -> Void
     private let downloadModel: (ModelSpec?) -> Void
+    private let uninstall: () -> Void
 
     /// `downloadModel(nil)` opens the download window at New Model…
     init(server: ServerController, save: @escaping (ServerConfig, String?, Bool) -> Void,
-         install: @escaping () -> Void, downloadModel: @escaping (ModelSpec?) -> Void) {
+         install: @escaping () -> Void, downloadModel: @escaping (ModelSpec?) -> Void,
+         uninstall: @escaping () -> Void) {
         self.server = server
         self.save = save
         self.install = install
         self.downloadModel = downloadModel
+        self.uninstall = uninstall
     }
 
     func show() {
@@ -28,6 +31,10 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             server: server,
             install: install,
             downloadModel: downloadModel,
+            uninstall: { [weak self] in
+                self?.window?.close()
+                self?.uninstall()
+            },
             onSave: { [weak self] config, key, restart in
                 self?.save(config, key.isEmpty ? nil : key, restart)
                 self?.window?.close()
@@ -58,6 +65,7 @@ private struct SettingsView: View {
     @ObservedObject var server: ServerController
     let install: () -> Void
     let downloadModel: (ModelSpec?) -> Void
+    let uninstall: () -> Void
     let onSave: (ServerConfig, String, Bool) -> Void
     let onCancel: () -> Void
 
@@ -69,7 +77,7 @@ private struct SettingsView: View {
 
     init(config: ServerConfig, apiKey: String, serverActive: Bool,
          server: ServerController, install: @escaping () -> Void,
-         downloadModel: @escaping (ModelSpec?) -> Void,
+         downloadModel: @escaping (ModelSpec?) -> Void, uninstall: @escaping () -> Void,
          onSave: @escaping (ServerConfig, String, Bool) -> Void, onCancel: @escaping () -> Void) {
         _config = State(initialValue: config)
         _apiKey = State(initialValue: apiKey)
@@ -80,6 +88,7 @@ private struct SettingsView: View {
         self.server = server
         self.install = install
         self.downloadModel = downloadModel
+        self.uninstall = uninstall
         self.onSave = onSave
         self.onCancel = onCancel
     }
@@ -156,6 +165,15 @@ private struct SettingsView: View {
                     }
                     Text("Quitting the app leaves the server running.")
                         .font(.caption).foregroundStyle(.secondary)
+                }
+                SwiftUI.Section("Uninstall and Cleanup") {
+                    DownloadedModels(server: server)
+                    HStack {
+                        Text("Removes Slipstream, its command, data and logs, the models you choose, and this app.")
+                            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        Spacer()
+                        Button("Uninstall and Cleanup…", role: .destructive, action: uninstall)
+                    }
                 }
             }
             .formStyle(.grouped)
@@ -358,6 +376,64 @@ private struct ModelChoice: View {
             if !ModelPresence.isAvailable(model) {
                 Text("No model at this location.").font(.caption).foregroundStyle(.orange)
             }
+        }
+    }
+}
+
+/// The downloaded models, each with its size and a Delete button.
+private struct DownloadedModels: View {
+    @ObservedObject var server: ServerController
+    @State private var sizes: [String: Int64] = [:]
+    @State private var refresh = 0
+
+    var body: some View {
+        let items = Cleanup.modelItems(models: server.config.availableModels, configuredModel: server.config.model)
+        if items.isEmpty {
+            Text("No downloaded models.").font(.caption).foregroundStyle(.secondary)
+        }
+        ForEach(items) { item in
+            HStack {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(item.title)
+                    Text((item.url.path as NSString).abbreviatingWithTildeInPath + " · "
+                         + (sizes[item.id].map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) } ?? "…"))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Delete…") { delete(item) }
+            }
+            .task(id: item.id) {
+                let url = item.url
+                let size = await Task.detached { ModelPresence.allocatedSize(of: url) }.value
+                sizes[item.id] = size
+            }
+        }
+        .id(refresh)
+    }
+
+    private func delete(_ item: CleanupItem) {
+        let inUse = server.isServing(folder: item.url)
+        let alert = NSAlert()
+        alert.messageText = "Delete \(item.title)?"
+        alert.informativeText = "Removes \((item.url.path as NSString).abbreviatingWithTildeInPath)"
+            + (sizes[item.id].map { " (\(ByteCountFormatter.string(fromByteCount: $0, countStyle: .file)))" } ?? "")
+            + (item.title.contains("Flash-Next") ? ", including the copy prepared on its first start" : "") + "."
+            + (inUse ? " The server is running this model and is stopped first." : "")
+            + " It cannot be undone."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: inUse ? "Stop and Delete" : "Delete")
+        alert.addButton(withTitle: "Cancel")
+        alert.buttons.first?.hasDestructiveAction = true
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        Task {
+            if inUse { await server.stopAndWait() }
+            do {
+                try Cleanup.remove(item)
+            } catch {
+                let failure = NSAlert(error: error)
+                failure.runModal()
+            }
+            refresh += 1
         }
     }
 }

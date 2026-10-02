@@ -88,6 +88,25 @@ MIT); first release v26.10.0.
     Saved to `config.customModels`. Verified against real repos: qwen2 GGUF and safetensors-only
     are rejected; a missing repo returns 401.
   - `--download <repo>` dev aid starts a catalog model's download.
+- **Uninstall and Cleanup** (Settings, last section; `Cleanup.swift`, `UninstallWindow.swift`):
+  - **Per model:** each downloaded model can be deleted with its size; "Stop and Delete" if the
+    server runs it.
+  - **Full uninstall:** stops the server, then removes `~/.local/share/slipstream`,
+    `~/.local/bin/slipstream` (only if it points into the releases), `Application
+    Support/Slipstream-v2` and `/Slipstream`, `Logs/Slipstream`, the ticked models, the Keychain
+    API key, the login item and the UserDefaults domains. The app bundle goes to the Trash, then
+    the app quits.
+  - **Safety:** only known paths, and model folders only when they hold a model (`ModelPresence`).
+    Homebrew, hf, `~/.cache/huggingface` and source checkouts are left alone.
+  - **Testing:** never run the full uninstall on the user's Mac for a test; the dry run of
+    `Cleanup.allItems` listed the 7 expected items.
+- **Smaller models researched (2026-10-02):** none usable.
+  - `Qwen/Qwen3.8-27B` is `qwen3_5` (dense, 64 layers, hidden 5120; GGUFs read `qwen35`), and the
+    Qwen3.8 distills are `qwen35`/`qwen35moe`.
+  - Every real `qwen4exp` model is Flash-Next, and the engine's layout is fixed to its dimensions.
+    Low-bit Flash-Next builds (unsloth/AtomicChat/ISTA, IQ quantisations, in sub-folders) are
+    re-quantised to the same ~95 GB package, and the converter can't read IQ types.
+  - So New Model… rejects GGUF variants in sub-folders and anything over 150 GB.
 - **Model download** (`ModelSetup.swift`, `ModelDownloader`, `ModelWindow`): "Download Model…"
   shows while `config.model` is missing (`ModelPresence`).
   - **Model:** `ModelSpec.swiftQwen38FlashNext`, the user's choice and the README's command:

@@ -638,3 +638,59 @@ final class ModelCatalogTests: XCTestCase {
                        .noRoomToPrepare(shortBy: 15 * gb), "35 - 20 - 20 leaves -5 GB, 15 GB short of the reserve")
     }
 }
+
+final class CleanupTests: XCTestCase {
+    private var root: URL!
+
+    override func setUpWithError() throws {
+        root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: root)
+    }
+
+    private func model(_ name: String, holdsModel: Bool) throws -> ModelSpec {
+        let folder = root.appendingPathComponent(name)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        if holdsModel { try Data("x".utf8).write(to: folder.appendingPathComponent("m-00001-of-00001.gguf")) }
+        return ModelSpec(repository: "test/\(name)", folder: folder.path, title: name)
+    }
+
+    func testListsOnlyFoldersThatHoldAModelOnce() throws {
+        let present = try model("present", holdsModel: true)
+        let empty = try model("empty", holdsModel: false)
+        let items = Cleanup.modelItems(models: [present, empty, present], configuredModel: present.folder)
+        XCTAssertEqual(items.map(\.title), ["present"], "no empty folder, no duplicate")
+        XCTAssertTrue(items[0].isModel)
+        XCTAssertTrue(Cleanup.modelItems(models: [], configuredModel: "owner/repo").isEmpty, "a Hub id is no folder")
+    }
+
+    func testDeletingAModelRemovesOnlyItsFolder() throws {
+        let keep = try model("keep", holdsModel: true)
+        let drop = try model("drop", holdsModel: true)
+        let item = try XCTUnwrap(Cleanup.modelItems(models: [drop], configuredModel: "").first)
+        try Cleanup.remove(item)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: drop.folder))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: keep.folder))
+    }
+
+    func testTheAppBundleIsNeverDeletedDirectly() throws {
+        let app = root.appendingPathComponent("Test.app")
+        try FileManager.default.createDirectory(at: app, withIntermediateDirectories: true)
+        try Cleanup.remove(CleanupItem(kind: .app, url: app))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: app.path), "it goes to the Trash through NSWorkspace")
+    }
+
+    func testCollectionsAndOversizedRepositoriesAreRejected() {
+        let collection = Data(#"[{"type":"file","path":"Q4_K_M/m-00001-of-00002.gguf","size":5},{"type":"file","path":"IQ2/m.gguf","size":5}]"#.utf8)
+        if case .unsupported(let reason) = ModelCheck.layout(ofTree: collection).layout {
+            XCTAssertTrue(reason.contains("sub-folders"))
+        } else { XCTFail("a multi-variant collection must be rejected") }
+        let huge = Data(#"[{"type":"file","path":"m.gguf","size":300000000000}]"#.utf8)
+        if case .unsupported(let reason) = ModelCheck.layout(ofTree: huge).layout {
+            XCTAssertTrue(reason.contains("300 GB"))
+        } else { XCTFail("a 300 GB repository must be rejected") }
+    }
+}

@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settings: SettingsWindowController!
     private var installer: InstallWindowController!
     private var modelWindow: ModelWindowController!
+    private var uninstaller: UninstallWindowController!
     private var pollTask: Task<Void, Never>?
     private var menuOpen = false
 
@@ -24,6 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.server.locate()
                 self?.menu.update()
             })
+        uninstaller = UninstallWindowController(server: server)
         modelWindow = ModelWindowController(
             searchPath: { [weak self] in self?.server.searchPath ?? [] },
             models: { [weak self] in self?.server.config.availableModels ?? ModelSpec.catalog },
@@ -37,7 +39,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             install: { [weak self] in self?.installer.show() },
             downloadModel: { [weak self] model in
                 if let model { self?.modelWindow.show(model: model) } else { self?.modelWindow.show(newModel: true) }
-            })
+            },
+            uninstall: { [weak self] in self?.uninstaller.show() })
         menu = MenuController(server: server, actions: .init(
             start: { [weak self] in self?.start() },
             stop: { [weak self] in self?.server.stop(); self?.menu.update() },

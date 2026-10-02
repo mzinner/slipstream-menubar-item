@@ -275,6 +275,25 @@ final class ServerController: ObservableObject {
         status = .stopping
     }
 
+    /// Stops the server and waits until it is gone (SIGKILL after the usual 30 s).
+    func stopAndWait() async {
+        await refresh()
+        guard status.isActive else { return }
+        stop()
+        for _ in 0..<45 where status.isActive {
+            try? await Task.sleep(for: .seconds(1))
+            await refresh()
+        }
+        if status.isActive { forceStop() }
+    }
+
+    /// Whether the running server serves the model in this folder.
+    func isServing(folder: URL) -> Bool {
+        guard status.isActive, let model else { return false }
+        let path = URL(fileURLWithPath: (model as NSString).expandingTildeInPath).standardizedFileURL.path
+        return path == folder.standardizedFileURL.path
+    }
+
     func forceStop() {
         guard let pid else { return }
         stopping = true

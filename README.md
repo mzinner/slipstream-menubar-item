@@ -6,8 +6,8 @@ live serving and system charts. The menu design follows
 [oMLX](https://github.com/jundot/omlx)'s menu bar app, reduced to the essentials.
 
 The item shows Slipstream's bolt and, while serving, two live readouts in the style of
-[Vorssaint](https://github.com/vorssaint/vorssaint-utils)'s network indicator: ↑ prompt
-tokens per second over ↓ output tokens per second.
+[Vorssaint](https://github.com/vorssaint/vorssaint-utils)'s network indicator: ↓ prompt
+tokens per second (incoming) over ↑ output tokens per second (outgoing).
 
 ```
 ●  Running

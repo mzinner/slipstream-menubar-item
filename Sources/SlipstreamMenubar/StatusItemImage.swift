@@ -1,7 +1,8 @@
 import AppKit
 
 /// Draws the menu bar item: Slipstream's bolt, and while serving, two stacked
-/// readouts (↑ prompt tok/s over ↓ output tok/s) in the menu bar's text color.
+/// readouts in the menu bar's text color: ↓ prompt tok/s (coming in to the
+/// server) over ↑ output tok/s (going out), like a network indicator.
 enum StatusItemImage {
     static let height: CGFloat = 22
     /// Points per unit of the bolt's 24-unit SVG box (the size it had at 17 pt).
@@ -38,8 +39,8 @@ enum StatusItemImage {
                 let top = height / 2
                 let prompt = min(reviewValue ?? rates.prompt, maximumShown)
                 let output = min(reviewValue ?? rates.output, maximumShown)
-                drawLine("↑" + compact(prompt), right: x + readoutWidth, baseline: top + 1.4)
-                drawLine("↓" + compact(output), right: x + readoutWidth, baseline: top + 1.4 - lineHeight)
+                drawLine("↓" + compact(prompt), right: x + readoutWidth, baseline: top + 1.4)
+                drawLine("↑" + compact(output), right: x + readoutWidth, baseline: top + 1.4 - lineHeight)
             }
             return true
         }

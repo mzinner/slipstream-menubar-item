@@ -1,4 +1,5 @@
 import AppKit
+import OSLog
 import SlipstreamMenubarCore
 import SwiftUI
 
@@ -24,6 +25,16 @@ final class AppUpdater: ObservableObject {
             default: return false
             }
         }
+
+        /// For the log.
+        var summary: String {
+            switch self {
+            case .available(let release): return "available \(release.version)"
+            case .downloading(_, let total): return "downloading \(total) bytes"
+            case .failed(let message): return "failed: \(message)"
+            default: return "\(self)"
+            }
+        }
     }
 
     struct UpdateError: LocalizedError {
@@ -31,7 +42,14 @@ final class AppUpdater: ObservableObject {
         var errorDescription: String? { message }
     }
 
-    @Published private(set) var phase: Phase = .idle
+    @Published private(set) var phase: Phase = .idle {
+        didSet {
+            if case .downloading = phase, case .downloading = oldValue { return }  // progress only
+            Self.log.notice("update: \(self.phase.summary, privacy: .public)")
+        }
+    }
+    /// `log show --predicate 'subsystem == "local.slipstream.menubar"'`
+    static let log = Logger(subsystem: "local.slipstream.menubar", category: "update")
     /// The newest release seen that is newer than this app, for the menu.
     @Published private(set) var available: AppRelease?
 
@@ -47,6 +65,7 @@ final class AppUpdater: ObservableObject {
     var present: () -> Void = {}
 
     private static let lastCheckKey = "AppUpdateLastCheck"
+    private static let lastAttemptKey = "AppUpdateLastAttempt"
     private static let skippedKey = "AppUpdateSkippedVersion"
 
     init(repository: String = ProcessInfo.processInfo.environment["SLIPSTREAM_MENUBAR_UPDATE_REPO"]
@@ -64,10 +83,20 @@ final class AppUpdater: ObservableObject {
 
     /// The daily check: quiet unless it finds a version the user has not skipped.
     func checkIfDue(enabled: Bool) {
-        let last = UserDefaults.standard.object(forKey: Self.lastCheckKey) as? Date
-        guard enabled, !phase.isRunning, AppUpdate.isCheckDue(lastCheck: last) else { return }
+        let defaults = UserDefaults.standard
+        guard enabled, !phase.isRunning,
+              AppUpdate.isCheckDue(lastCheck: defaults.object(forKey: Self.lastCheckKey) as? Date,
+                                   lastAttempt: defaults.object(forKey: Self.lastAttemptKey) as? Date)
+        else { return }
+        defaults.set(Date(), forKey: Self.lastAttemptKey)
         task = Task {
-            guard let release = try? await latestRelease() else { return }  // offline: try again later
+            let release: AppRelease
+            do {
+                release = try await latestRelease()
+            } catch {
+                Self.log.notice("update: automatic check failed: \(error.localizedDescription, privacy: .public)")
+                return  // offline, say: the next try is in an hour
+            }
             UserDefaults.standard.set(Date(), forKey: Self.lastCheckKey)
             guard AppUpdate.isNewer(release.version, than: currentVersion) else { return }
             available = release
@@ -111,6 +140,7 @@ final class AppUpdater: ObservableObject {
     }
 
     func cancel() {
+        guard phase != .installing else { return }  // the bundle is being swapped; the app quits next
         download.cancel()
         task?.cancel()
         if phase.isRunning { phase = available.map { .available($0) } ?? .idle }
@@ -120,13 +150,24 @@ final class AppUpdater: ObservableObject {
         if !phase.isRunning { phase = .idle }
     }
 
+    /// One retry for errors a second attempt usually gets past.
+    private func withRetry<T>(_ operation: () async throws -> T) async throws -> T {
+        do {
+            return try await operation()
+        } catch let error as URLError where [.networkConnectionLost, .timedOut, .cannotConnectToHost,
+                                               .notConnectedToInternet].contains(error.code) {
+            try await Task.sleep(for: .seconds(2))
+            return try await operation()
+        }
+    }
+
     private func latestRelease() async throws -> AppRelease {
         guard let url = URL(string: "https://api.github.com/repos/\(repository)/releases/latest") else {
             throw UpdateError(message: "Invalid repository \(repository)")
         }
         var request = URLRequest(url: url)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await withRetry { try await session.data(for: request) }
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard code == 200 else {
             throw UpdateError(message: code == 404 ? "\(repository) has no published release"
@@ -160,7 +201,7 @@ final class AppUpdater: ObservableObject {
         guard let zipURL = release.assets[release.zipName], let sumsURL = release.assets[release.checksumsName] else {
             throw UpdateError(message: "Release \(release.tag) has no \(release.zipName) with checksums")
         }
-        let (sumsData, sumsResponse) = try await session.data(from: sumsURL)
+        let (sumsData, sumsResponse) = try await withRetry { try await session.data(from: sumsURL) }
         guard (sumsResponse as? HTTPURLResponse)?.statusCode == 200,
               let expected = AppUpdate.checksum(for: release.zipName, in: String(decoding: sumsData, as: UTF8.self))
         else { throw UpdateError(message: "Could not read the checksums of \(release.tag)") }

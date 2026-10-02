@@ -742,12 +742,17 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertFalse(AppUpdate.isNewer("nightly", than: "26.10.0"))
     }
 
-    func testChecksAboutOnceADay() {
+    func testChecksAboutOnceADayAndRetriesHourly() {
         let now = Date()
-        XCTAssertTrue(AppUpdate.isCheckDue(lastCheck: nil, now: now))
-        XCTAssertFalse(AppUpdate.isCheckDue(lastCheck: now.addingTimeInterval(-3600), now: now))
-        XCTAssertTrue(AppUpdate.isCheckDue(lastCheck: now.addingTimeInterval(-21 * 3600), now: now))
-        XCTAssertTrue(AppUpdate.isCheckDue(lastCheck: now.addingTimeInterval(3600), now: now), "clock moved back")
+        func ago(_ hours: Double) -> Date { now.addingTimeInterval(-hours * 3600) }
+        XCTAssertTrue(AppUpdate.isCheckDue(lastCheck: nil, lastAttempt: nil, now: now))
+        XCTAssertFalse(AppUpdate.isCheckDue(lastCheck: ago(1), lastAttempt: ago(1), now: now))
+        XCTAssertTrue(AppUpdate.isCheckDue(lastCheck: ago(21), lastAttempt: ago(21), now: now))
+        XCTAssertTrue(AppUpdate.isCheckDue(lastCheck: ago(-1), lastAttempt: ago(-1), now: now), "clock moved back")
+        // Offline: the checks fail, and the next try waits an hour, not one poll.
+        XCTAssertFalse(AppUpdate.isCheckDue(lastCheck: nil, lastAttempt: ago(0.01), now: now))
+        XCTAssertFalse(AppUpdate.isCheckDue(lastCheck: ago(30), lastAttempt: ago(0.5), now: now))
+        XCTAssertTrue(AppUpdate.isCheckDue(lastCheck: ago(30), lastAttempt: ago(1.1), now: now))
     }
 
     func testFindsTheZipsChecksum() {

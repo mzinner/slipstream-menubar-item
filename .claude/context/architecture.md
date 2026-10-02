@@ -71,7 +71,13 @@ Part of the project context; see [the index](../PROJECT_CONTEXT.md).
   - **Check:** GitHub `releases/latest` of `mzinner/slipstream-menubar-item` (override
     `SLIPSTREAM_MENUBAR_UPDATE_REPO`), at most every 20 h from the poll loop
     (`config.checkForAppUpdates`, default on), or the menu's Check for Updates… (titled "Update to
-    <v>…" once one is known). Last check and skipped version live in UserDefaults.
+    <v>…" once one is known). Last check, last attempt and skipped version live in UserDefaults.
+    A failed automatic check waits an hour (`retryInterval`): 26.10.1 retried on every 2–3 s poll
+    while offline, which would exhaust GitHub's 60/h unauthenticated limit. Requests retry once on
+    transient `URLError`s ("The network connection was lost." happened on a first request).
+  - **Log:** `/usr/bin/log show --predicate 'subsystem == "local.slipstream.menubar"'` (notice
+    level; plain `log` is a zsh builtin). Verified 2026-10-03: a 26.10.0 copy updated itself to the
+    CI build of 26.10.1 and relaunched, in ~1.4 s.
   - **Notes:** the window lists the release body's `## Changes` bullets; the release workflow
     writes them from `git log <previous tag>..<tag>`, leaving out `.claude`-only commits.
   - **Install:** download `Slipstream-Menubar.app.<v>.zip`, verify against `SHA256SUMS.<v>.txt`,

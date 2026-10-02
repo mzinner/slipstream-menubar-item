@@ -58,6 +58,8 @@ public enum AppUpdate {
     public static let repository = "mzinner/slipstream-menubar-item"
     /// An automatic check runs at most this often.
     public static let checkInterval: TimeInterval = 20 * 60 * 60
+    /// After a failed automatic check (offline, say), the next try waits this long.
+    public static let retryInterval: TimeInterval = 60 * 60
 
     /// Whether `latest` is newer than the running version. A build without a real
     /// version (0.0.0, an unbundled run) never offers an update.
@@ -70,10 +72,14 @@ public enum AppUpdate {
         !text.isEmpty && text.first!.isNumber && text.allSatisfy { $0.isNumber || $0 == "." }
     }
 
-    /// Whether an automatic check is due.
-    public static func isCheckDue(lastCheck: Date?, now: Date = Date()) -> Bool {
-        guard let lastCheck else { return true }
-        return now.timeIntervalSince(lastCheck) >= checkInterval || now < lastCheck
+    /// Whether an automatic check is due: a day after the last one that worked, and an
+    /// hour after the last attempt, so being offline does not mean a request per poll.
+    public static func isCheckDue(lastCheck: Date?, lastAttempt: Date?, now: Date = Date()) -> Bool {
+        func elapsed(_ date: Date?, _ interval: TimeInterval) -> Bool {
+            guard let date else { return true }
+            return now.timeIntervalSince(date) >= interval || now < date  // or the clock moved back
+        }
+        return elapsed(lastCheck, checkInterval) && elapsed(lastAttempt, retryInterval)
     }
 
     /// The checksum for `name` in a `shasum -a 256` listing.

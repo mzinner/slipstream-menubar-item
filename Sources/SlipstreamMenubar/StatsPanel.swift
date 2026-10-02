@@ -81,7 +81,10 @@ struct StatsContent: View {
                 }
                 SystemSections(stats: stats)
             }
-            .padding(16)
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            // The last card sits on the window edge; a little more below reads as the same margin.
+            .padding(.bottom, 24)
     }
 }
 

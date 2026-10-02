@@ -98,6 +98,7 @@ Sources/SlipstreamMenubarCore/   metrics parsing, rates, status logic, config, s
 Sources/SlipstreamMenubar/       AppKit menu, server control, SwiftUI panel and settings
 Tests/SlipstreamMenubarCoreTests/
 scripts/build-app.sh             assembles and signs the .app bundle
+scripts/fake-server.py           stand-in Slipstream server for testing (outages, busy, served requests)
 ```
 
 ## Releases

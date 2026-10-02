@@ -9,6 +9,22 @@ floating panel shows live serving charts (throughput, KV cache, requests, engine
 charts (CPU, GPU, memory, swap). Published on GitHub as `mzinner/slipstream-menubar-item` (public,
 MIT); first release v26.10.0.
 
+## Environment
+
+- **Machine:** Apple M5 Pro (20 GPU cores), 64 GB, macOS 26.6.2. Display 1920×1080 pt (4K panel);
+  the panel's usable screen height is 1050 pt.
+- **Toolchain:** Xcode 27 / Swift 6.4 locally. **CI builds with Swift 6.2.4** (GitHub `macos-15` +
+  `setup-xcode latest-stable`), so the code must keep compiling there. The deployment target is
+  macOS 15 (the Slipstream engine itself needs 26.4).
+- **Accounts:** `gh` is logged into the private account `mzinner` (it was `mariadb-MikeZinner`
+  earlier; the upstream PRs #3–#5 were opened from that one). The NAS git server is
+  `ssh://192.168.10.245/volume1/Git/<name>`: bare repos, no `.git` suffix, `git init --bare -b main`.
+- **Model in use:** `~/models/qwen38-flash-next-v3`: 3 GGUF shards (~102 GB), `MTP/mtp-shared-Q4_K_M.gguf`,
+  `prepared/` (~100 GB, written by the converter on first serve). Served as
+  `local/qwen38-flash-next-v3` on 127.0.0.1:8090.
+- **App config on this Mac** (`menubar.json`): repo `~/git/slipstream`, the model above, port 8090,
+  not listening on the network, no API key. UserDefaults domain `local.slipstream.menubar`.
+
 ## Architecture / key decisions
 
 - **Two targets:** `SlipstreamMenubarCore` (testable: metrics parsing, rates, status resolution,
@@ -50,6 +66,72 @@ MIT); first release v26.10.0.
   scroll (`onScrollGeometryChange` on `visibleRect`). Every chart uses a fixed 34 pt y-axis label
   column, so charts align.
 
+## Slipstream server contract (what the app relies on)
+
+- **Launch chain:** `./slipstream serve …` → `slipstream-v2` (sh) → `.venv/bin/python
+  install/launcher.py`. The launcher takes an `flock` on `build/runtime/serve.lock`, writes `{"pid",
+  "model", "port", "host"}` (`host` only with PR #5), and probes `bind((host, port))`. For a GGUF
+  folder without `prepared/manifest.json` + `prepared/target/layer-0.bin`, it runs the converter as a
+  subprocess. Then it `os.execve`s into `server/server.py` (same pid), which starts the engine
+  (`build/slipstream-v2 serve-native`) as a child. The lock keeps its contents after exit.
+  `--max-context`/`--max-memory` default to `auto` (256K context here).
+- **Signals:** SIGTERM/SIGINT → graceful shutdown, logs `Stopping · releasing engine resources`,
+  ~2 s. A model load takes ~11–15 s for a prepared package. GGUF preparation took 214 s with 5 workers.
+- **Endpoints:** `GET /` chat UI (off with `--no-webui`); `/health` is static 200 while HTTP is up;
+  `/ready` 200/503 = `backend.is_ready()` (can submit, native ready, pressure normal/warning);
+  `/status` JSON (top-level `ready`, `maximum_context_tokens`, `kv.block_tokens` and
+  `pages_*`, `memory_plan`, `transport.status_stale`; while busy it answers quickly but stale, with
+  `"error": "native status response timed out"`); `/metrics` Prometheus, every series three times
+  (`slipstream_v2_*`, `slipstream_*`, `splash_*`); OpenAI/Anthropic routes under `/v1/…`.
+- **Auth:** with an API key (`--api-key` or `SLIPSTREAM_V2_API_KEY`), everything except
+  `GET/HEAD /`, `/index.html`, `/health`, `/ready` and `OPTIONS` needs `Authorization: Bearer <key>`
+  or `x-api-key` (401 otherwise).
+- **Host header:** accepted are localhost, 127.0.0.1, ::1, the bind address, *the local address the
+  connection arrived on* (so a LAN IP works with `--host 0.0.0.0`), and `--allowed-host` names; 403
+  otherwise. `<mac>.local` needs `--allowed-host`.
+- **Log lines** (stdout, `HH:MM:SS` prefix): `Loading · <model>`, `Ready · <model> · context 256K ·
+  http://…`, a `Done · input N · cached N · output N · … TTFT … · prompt X tok/s · decode Y tok/s` line
+  per request (the ground truth for speeds), `Stopping · …`, `Memory: growth paused…`. Converter:
+  `[Slipstream] Preparing GGUF model from …`, `  [DONE] <part> finished` ×53, `=== Successfully
+  prepared … ===`, `error: …` / `[ERROR]`.
+- **Metric semantics:**
+  - Token counters `decode_output_tokens_total` and `prefill_input_tokens_total`: divide by real
+    time, not by `*_wall_milliseconds_total`.
+  - KV: `kv_pages_{total,active,cache,free}` × `block_tokens` (32). 12,032 pages ≈ 385K tokens.
+  - Memory: `memory_current_bytes` (~155 GB) counts mmapped weights, so the app uses
+    `memory_limit_bytes − memory_headroom_bytes` (~52–54 of 55.8 GB).
+  - Also used: `memory_pressure{state=…}`, `ttft/itl_p50/p95_milliseconds`, `draft_acceptance_ratio`
+    (~0.62–0.72), `cache_hits_total` / `cache_cold_misses_total`, `requests_*_total`,
+    `scheduler_{queued,prefilling,decoding}`.
+- **Measured here:**
+  - Decode 30–56 tok/s (median ~44; the README claims 40–48), prefill ~300–450 tok/s.
+  - TTFT 0.4–3 s with the context cached; 44 s for 18K new tokens.
+  - The engine pins ~37 GB of experts. System memory sits at ~54 of 64 GB while serving.
+
+## User decisions (keep unless asked to change)
+
+- **Menu bar:**
+  - Bolt on the left, 2 pt gap.
+  - ↓ prompt on top, ↑ output below (incoming/outgoing as seen from the server); arrows directly
+    against the numbers, right-aligned.
+  - Integers only, 400 cap, column sized for "↑400". macOS still adds 8 pt per side (57 pt item for
+    a 41 pt image).
+- **Panel:**
+  - One floating window (not submenus) with serving and system cards, refreshing every 2 s.
+  - Compact view is the default; the toggle sits left of Stop/Start.
+  - Fixed y-axis label column (34 pt) for alignment, with compact `47G`/`4.0K` labels; the prompt
+    chart is 6 pt below the output chart.
+  - Color dots after the figure labels in every card; chart legends hidden in compact.
+  - Sizes itself once (first launch only) and **must never auto-resize** on toggling.
+  - Bottom fade of 40 pt only while there is more to scroll. **No always-visible scrollbar.**
+  - History kept across outages, with light gray gap areas.
+- **Behaviour:** Quit leaves the server running; the app detects a running server on launch and
+  must not mislabel a busy one ("Not responding" / "Loading model…" were both bugs).
+- **Settings:** the Access section has an API key (Generate/Copy), "Listen on the network", and
+  Allowed hosts with explanations.
+- **Repo:** Swift; local NAS repo first, now public on GitHub (MIT) with the history credited to the
+  private account via noreply; releases versioned `vYY.MM.N` (v26.10.0 = October 2026).
+
 ## Current state
 
 - **Working and verified:**
@@ -64,6 +146,32 @@ MIT); first release v26.10.0.
   README were taken by the user.
 - **Known:** the CI log warns that `actions/checkout@v4` and `softprops/action-gh-release@v2` target
   Node 20 (forced to Node 24).
+
+## Testing recipes
+
+- **Unit tests:** `make test` (31 XCTest cases, including a real `/metrics` capture in
+  `Tests/.../Fixtures/metrics.txt`). `make app` builds `build/Slipstream Menubar.app`; `make run`
+  opens it with `--show-panel`; `make install` copies it to /Applications (needed for Open at login).
+- **Visual checks:**
+  - `open "build/Slipstream Menubar.app" --args --show-panel --snapshot /path/p.png`.
+  - It writes `p.menubar.png` (menu bar samples at 4×) at once, `p.widths.txt` (status item vs.
+    image width) after 8 s, and `p.png` (panel content at 2×) after 45 s.
+  - Send load meanwhile so charts have data:
+    `curl http://127.0.0.1:8090/v1/chat/completions -d '{"model":"local/qwen38-flash-next-v3",…}'`.
+- **Without touching the user's app or server:**
+  - Run the bare binary `.build/release/SlipstreamMenubar` (not `.build/arm64-apple-macosx/…`).
+    Its UserDefaults domain is `SlipstreamMenubar`, so set e.g.
+    `defaults write SlipstreamMenubar compactStatsPanel -bool true`, then `defaults delete` afterwards.
+  - Use `SLIPSTREAM_MENUBAR_CONFIG=<json>`, and stop it by its PID.
+  - With `scripts/fake-server.py` (`--outage START END`, `--busy`, `--served N`, `--lock-repo DIR`),
+    and a config whose `repoPath` is the fake repo, it shows gaps, busy-at-launch etc.
+- **Saturation (`/ready` 503):** three concurrent chat requests with a ~5K-token prompt.
+- **Memory:** sample `footprint -p <pid>` (`phys_footprint`) once a minute for over 5 minutes, with
+  the panel open and closed. Don't rebuild during it.
+- **Start/Stop:** ask the user to click (see Gotchas), and watch `serve.lock`, `/ready` and the log
+  with a 1 s loop.
+- **Restarting the user's server outside the app:** detach it fully, with a Python
+  `fork()`/`setsid()`/`execv("./slipstream", […])`, output to `~/Library/Logs/Slipstream/server.log`.
 
 ## Files that matter
 
@@ -86,6 +194,25 @@ MIT); first release v26.10.0.
 - `.github/workflows/release.yml`: `v*` tag → test, build with `MARKETING_VERSION`, zip and SHA-256
   to a GitHub release.
 - `.claude/commands/checkpoint.md`: the `/checkpoint` command that maintains this file (committed).
+- `scripts/fake-server.py`: stand-in server for tests (gaps, busy `/ready`, served requests,
+  serve.lock).
+- `Tests/SlipstreamMenubarCoreTests/Fixtures/metrics.txt`: a real `/metrics` capture (also used by
+  the fake server).
+- `Resources/Info.plist`: bundle id `local.slipstream.menubar`, `LSUIElement`, macOS 15. The version
+  is set by `build-app.sh` (`MARKETING_VERSION`; `CFBundleVersion` = `git describe`).
+- `Assets/MenuBarItem.png`, `Assets/StatsPanel.png`: README screenshots taken by the user.
+
+## Release process
+
+1. Commit and push `main` to both remotes.
+2. `git tag -a vYY.MM.N -m "Slipstream Menubar YY.MM.N"`, then `git push github vYY.MM.N` (and
+   `origin`).
+3. The workflow (~3 min, macOS arm64 runners can queue) tests, builds, and publishes
+   `Slipstream-Menubar-<ver>.zip` (~294 KB) and `.zip.sha256` with install notes. Watch it with
+   `gh run watch <id> -R mzinner/slipstream-menubar-item`.
+4. Verify with `gh release download`, `shasum -a 256 -c`, the `Info.plist` version, and
+   `codesign --verify --deep --strict`.
+
 
 ## Next steps
 
@@ -95,6 +222,13 @@ MIT); first release v26.10.0.
 3. Decide whether the 400 cap on the readout stays (prompt rates reach ~450).
 4. Long-run (1 h) memory check with the panel open, to settle the earlier RSS creep for good.
 5. Notarization would need a paid Developer ID.
+6. Upstream PRs npanj/slipstream#3, #4 and #5 are open. When they merge, rebase the Slipstream fork
+   (git drops identical patches; squash-merged ones need `rebase -i`). Then remove the
+   `local/all-fixes` branch and the `fork` remote there.
+7. The release workflow only runs on tags; a push/PR workflow running `swift test` would catch
+   Swift 6.2 breakage earlier.
+8. `target/draft-vocab.bin` is not produced by the GGUF path (optional; it would speed up the MTP
+   draft head). It is on the Hub in `nitinpanj/Swift-Qwen3.8-Flash-Next-Splash`.
 
 ## Gotchas / things not to repeat
 
@@ -113,6 +247,15 @@ MIT); first release v26.10.0.
 - `sips --cropOffset` crops from the middle, not the top.
 - Commits must use the GitHub noreply address `37372663+mzinner@users.noreply.github.com` (set in
   the repo's local git config), never the work email.
+- **The agent's background tasks are killed after 2 hours**, and a server started inside one dies
+  with it (it happened at 19:03). Detach long-lived processes (see Testing recipes).
+- SwiftUI `Text("\(int)")` uses locale grouping (German: `8.090`); use `Text(verbatim:)` for ports,
+  pids and similar.
+- Samples must be timestamped when `/metrics` arrives: stamping before the request made a 40 tok/s
+  request read as 65.
+- One-second rate deltas swing between 0 and 2× because MTP drafts in bursts; hence the 3 s window.
+- `git cherry-pick` has no `-q`; `gh repo fork --remote` cannot be combined with a repo argument.
+- The engine's `decode_tokens_per_second` (~660) is not a client-facing rate. Never display it.
 
 ## Related repos
 
@@ -124,12 +267,35 @@ MIT); first release v26.10.0.
 - Remotes of this repo: `github` (`mzinner/slipstream-menubar-item`) and `origin` (NAS,
   `ssh://192.168.10.245/volume1/Git/slipstream-menubar-item`). Push to both.
 
+### Slipstream-side work from this session
+
+- **Issue npanj/slipstream#1 → PR #3:**
+  - The launcher runs the GGUF converter as its own process. `install/models.py` shadowed the
+    repo's `models/` package, and the converter's spawn-started workers re-ran the launcher.
+  - `dev/tools/sharded_gguf_reader.py` uses `SLIPSTREAM_GGML_LIB` or compiles
+    `dev/tools/fast_dequant.c` into `build/libslipstream-dequant.dylib`, instead of a hardcoded
+    libggml path.
+  - Fixed `fp16_to_fp32` in that C file; the 6 kernels are now bit-exact against `gguf`'s
+    dequantizers.
+- **Issue #2 (filed) → PR #4:**
+  - `ngram.bin` is converted from `per_layer_token_embd.weight` (Q4_0, 160 × 320,001,536, in
+    512K-row chunks, 29.8 GiB). The PLE norms are stored as 1 + weight in GGUF.
+  - The tokenizer comes from `Qwen/Qwen3.8-Flash-Next@de4b8e4d…`; the draft is a placeholder; a
+    reference package is optional and never the output itself.
+  - Experts are streamed one at a time (peak 6.5 → 4.1 GB per layer); workers = RAM / 12 GiB (5 on
+    64 GB; 8 workers ran the Mac out of memory). The manifest is written last.
+- **PR #5:** `serve --host` passed to the server; `serve.lock` records `host`.
+  Tested over the LAN: 401/200/403 behave as documented above.
+
 ## Git state
 
 ```
 $ git status --short
+ M .claude/PROJECT_CONTEXT.md
+?? scripts/fake-server.py
 $ git branch --show-current
 main
 ```
 
-Clean working tree; `.claude/PROJECT_CONTEXT.md` and `.claude/commands/checkpoint.md` are committed.
+At checkpoint time: this file and the new `scripts/fake-server.py` are about to be committed
+together; everything else is committed and pushed to both remotes.

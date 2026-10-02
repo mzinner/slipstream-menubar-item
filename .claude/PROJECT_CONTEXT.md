@@ -191,8 +191,9 @@ MIT); first release v26.10.0.
 - `Sources/SlipstreamMenubar/StatusItemImage.swift`: menu bar drawing.
 - `Sources/SlipstreamMenubar/AppDelegate.swift`: wiring, poll loop, `--show-panel`, `--snapshot`
   (renders the panel and menu bar samples to PNGs).
-- `.github/workflows/release.yml`: `v*` tag → test, build with `MARKETING_VERSION`, zip and SHA-256
-  to a GitHub release.
+- `.github/workflows/release.yml`: `v*` tag (or a manual run with an existing tag) → test, build with
+  `MARKETING_VERSION`, then `Slipstream-Menubar.app.<ver>.dmg` (app + Applications link),
+  `….zip` and `SHA256SUMS.<ver>.txt` to a GitHub release.
 - `.claude/commands/checkpoint.md`: the `/checkpoint` command that maintains this file (committed).
 - `scripts/fake-server.py`: stand-in server for tests (gaps, busy `/ready`, served requests,
   serve.lock).
@@ -207,9 +208,13 @@ MIT); first release v26.10.0.
 1. Commit and push `main` to both remotes.
 2. `git tag -a vYY.MM.N -m "Slipstream Menubar YY.MM.N"`, then `git push github vYY.MM.N` (and
    `origin`).
-3. The workflow (~3 min, macOS arm64 runners can queue) tests, builds, and publishes
-   `Slipstream-Menubar-<ver>.zip` (~294 KB) and `.zip.sha256` with install notes. Watch it with
-   `gh run watch <id> -R mzinner/slipstream-menubar-item`.
+3. The workflow (~1–3 min, macOS arm64 runners can queue) tests, builds, and publishes
+   `Slipstream-Menubar.app.<ver>.dmg` (~354 KB), `Slipstream-Menubar.app.<ver>.zip` (~294 KB) and
+   `SHA256SUMS.<ver>.txt` with install notes. Watch it with
+   `gh run watch <id> -R mzinner/slipstream-menubar-item`. To rebuild an existing release's files:
+   `gh workflow run release.yml -R mzinner/slipstream-menubar-item -f tag=vYY.MM.N`. It uploads
+   the new files but does not delete old ones; remove those with `gh release delete-asset`.
+   A `.app` cannot be a release asset by itself (it is a folder), hence the zip and the dmg.
 4. Verify with `gh release download`, `shasum -a 256 -c`, the `Info.plist` version, and
    `codesign --verify --deep --strict`.
 

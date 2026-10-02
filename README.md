@@ -17,10 +17,11 @@ tokens per second (incoming) over ↑ output tokens per second (outgoing).
 
 ## Download
 
-Get `Slipstream-Menubar-<version>.zip` from the
-[latest release](https://github.com/mzinner/slipstream-menubar-item/releases/latest), unzip it and
-move *Slipstream Menubar.app* to /Applications. The app is signed ad hoc, not notarized, so allow
-it once in *System Settings → Privacy & Security → Open Anyway*, or run
+From the [latest release](https://github.com/mzinner/slipstream-menubar-item/releases/latest), get
+either `Slipstream-Menubar.app.<version>.dmg` (open it and drag the app onto *Applications*) or
+`Slipstream-Menubar.app.<version>.zip` (unzip it and move *Slipstream Menubar.app* to
+/Applications). The app is signed ad hoc, not notarized, so allow it once in *System Settings →
+Privacy & Security → Open Anyway*, or run
 `xattr -dr com.apple.quarantine "/Applications/Slipstream Menubar.app"`.
 
 ## Requirements
@@ -104,7 +105,8 @@ scripts/fake-server.py           stand-in Slipstream server for testing (outages
 ## Releases
 
 Pushing a tag such as `v26.10.0` runs `.github/workflows/release.yml`: it tests, builds the app
-with that version, and attaches the zip and its SHA-256 to a GitHub release.
+with that version, and attaches a `.dmg`, a `.zip` and their SHA-256 sums to a GitHub release.
+Running the workflow by hand with an existing tag rebuilds that release's files.
 
 ## License
 

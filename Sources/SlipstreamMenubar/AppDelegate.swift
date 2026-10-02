@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panel: StatsPanelController!
     private var settings: SettingsWindowController!
     private var installer: InstallWindowController!
+    private var modelWindow: ModelWindowController!
     private var pollTask: Task<Void, Never>?
     private var menuOpen = false
 
@@ -23,16 +24,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.server.locate()
                 self?.menu.update()
             })
+        modelWindow = ModelWindowController(
+            searchPath: { [weak self] in self?.server.searchPath ?? [] },
+            onDownloaded: { [weak self] folder in self?.useDownloadedModel(folder) },
+            startServer: { [weak self] in self?.start() },
+            openSettings: { [weak self] in self?.settings.show() })
         settings = SettingsWindowController(
             server: server,
             save: { [weak self] config, key, restart in self?.apply(config, apiKey: key, restart: restart) },
-            install: { [weak self] in self?.installer.show() })
+            install: { [weak self] in self?.installer.show() },
+            downloadModel: { [weak self] in self?.modelWindow.show() })
         menu = MenuController(server: server, actions: .init(
             start: { [weak self] in self?.start() },
             stop: { [weak self] in self?.server.stop(); self?.menu.update() },
             forceStop: { [weak self] in self?.server.forceStop(); self?.menu.update() },
             togglePanel: { [weak self] in self?.panel.toggle(); self?.menu.update() },
             install: { [weak self] in self?.installer.show() },
+            downloadModel: { [weak self] in self?.modelWindow.show() },
             isPanelVisible: { [weak self] in self?.panel.isVisible ?? false },
             settings: { [weak self] in self?.settings.show() },
             about: { [weak self] in self?.showAbout() },
@@ -61,10 +69,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if CommandLine.arguments.contains("--show-panel") { panel.show() }
         // Development aid: opens the installer and starts the download at once.
         if CommandLine.arguments.contains("--install-latest") { installer.show(startImmediately: true) }
+        // Development aid: opens the model download at once.
+        if CommandLine.arguments.contains("--download-model") { modelWindow.show() }
         if let index = CommandLine.arguments.firstIndex(of: "--snapshot"),
            CommandLine.arguments.indices.contains(index + 1) {
             snapshot(to: URL(fileURLWithPath: CommandLine.arguments[index + 1]))
         }
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        modelWindow.confirmQuit() ? .terminateNow : .terminateCancel
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -82,18 +96,62 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func tick() async {
+        let wasPreparing: Bool
+        if case .preparing = server.status { wasPreparing = true } else { wasPreparing = false }
         await server.refresh()
+        // Show the preparation's progress bar when a first start begins converting.
+        if case .preparing = server.status, !wasPreparing, !panel.isVisible { panel.show() }
         await stats.sample(port: server.port, apiKey: server.apiKey, serverReady: server.status == .running)
         menu.update()
     }
 
     private func start() {
         server.acknowledgeFailure()
+        guard raiseGPULimitIfNeeded() else { return }
         do {
             try server.start()
         } catch {
             alert("The server could not be started", error.localizedDescription)
         }
+        menu.update()
+    }
+
+    /// On a 64 GB Mac, sets `iogpu.wired_limit_mb` before a start: macOS keeps it near
+    /// 48 GiB and resets it at boot. Asks for an administrator password through the
+    /// standard macOS prompt. Returns false when the server should not start.
+    private func raiseGPULimitIfNeeded() -> Bool {
+        let config = server.config
+        guard config.raiseGPULimit, MachineCheck.needsGPULimitRaise(),
+              let current = GPUMemoryLimit.currentMB(), current != config.gpuWiredLimitMB else { return true }
+        let command = GPUMemoryLimit.command(megabytes: config.gpuWiredLimitMB)
+        let source = "do shell script \"\(command)\" with prompt "
+            + "\"Slipstream Menubar raises the GPU memory limit to \(config.gpuWiredLimitMB) MB "
+            + "for the model server.\" with administrator privileges"
+        var error: NSDictionary?
+        NSAppleScript(source: source)?.executeAndReturnError(&error)
+        if GPUMemoryLimit.currentMB() == config.gpuWiredLimitMB { return true }
+        let reason = (error?[NSAppleScript.errorMessage] as? String) ?? "The limit was not changed."
+        let alert = NSAlert()
+        alert.messageText = "The GPU memory limit was not raised"
+        alert.informativeText = "\(reason)\n\nIt is \(current == 0 ? "the macOS default" : "\(current) MB"); "
+            + "the model server expects \(config.gpuWiredLimitMB) MB on a 64 GB Mac and may fail to load "
+            + "without it. You can turn this step off in Settings → Memory."
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Start Anyway")
+        NSApp.activate(ignoringOtherApps: true)
+        return alert.runModal() == .alertSecondButtonReturn
+    }
+
+    /// A finished download becomes the configured model.
+    private func useDownloadedModel(_ folder: URL) {
+        var config = server.config
+        config.model = (folder.path as NSString).abbreviatingWithTildeInPath
+        do {
+            try store.save(config)
+        } catch {
+            alert("Settings could not be saved", error.localizedDescription)
+        }
+        server.config = config
         menu.update()
     }
 

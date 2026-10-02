@@ -74,6 +74,36 @@ MIT); first release v26.10.0.
     is `build/runtime/serve.lock`.
   - Refresh reads **all** candidate locks, so a server from either kind is found.
   - With nothing installed, the menu shows **Install Slipstream…** instead of Start.
+- **Model download** (`ModelSetup.swift`, `ModelDownloader`, `ModelWindow`): "Download Model…"
+  shows while `config.model` is missing (`ModelPresence`).
+  - **Model:** `ModelSpec.swiftQwen38FlashNext`, the user's choice and the README's command:
+    `hf download nitinpanj/Swift-Qwen3.8-Flash-Next-Q4_0-Q8out-v3-GGUF --local-dir
+    ~/models/swift-qwen38-flash-next-v3`. It has no `MTP/` folder; the engine loads the MTP head
+    only if `mtp-layer.bin` and `mtp-combiner.bin` exist, so it runs without (slower).
+  - **Order of checks:** RAM ≥ 64 GB (warn), `hf` (`brew install hf`; without brew, ask, then
+    open Terminal with the official installer in a `.command` file and poll for `brew`), disk
+    (`DiskCheck`: block unless ≥ 10 GB stay free after the download, the user's rule; warn if the
+    ~same-size prepared copy won't fit).
+  - **Progress:** `hf --format json` has no progress (dry run: file list with rounded sizes;
+    download: the final path only). So the total comes from the Hub tree API and the bytes from
+    the allocated size of the folder (partials are `.cache/huggingface/download/*.incomplete`).
+    `TransferEstimator` uses a 20 s window. Measured here: 21 → 53 MB/s, ETA ~32 min for 102.6 GB.
+  - **Abort:** SIGINT, then SIGTERM at 5 s, SIGKILL at 10 s (hf ignored SIGINT once). Then ask
+    whether to delete the files or keep them (hf resumes). Quit during a download asks and stops
+    hf (`applicationShouldTerminate`).
+  - **When done:** set `config.model`; on ≥ 64 GB ask to start the server, else point to Settings.
+- **GPU wired limit:** before every start on a 64 GB Mac (`MachineCheck.needsGPULimitRaise`: 64…95
+  GB), if `raiseGPULimit` and `iogpu.wired_limit_mb` ≠ `gpuWiredLimitMB` (59392), run
+  `/usr/sbin/sysctl iogpu.wired_limit_mb=…` through `NSAppleScript … with administrator
+  privileges`. If that fails: "Cancel" / "Start Anyway". Settings → Memory shows the current value.
+  It was already 59392 on this Mac, so the password prompt is untested here.
+- **First-start preparation:** for a server the app started, the log's 53 `[DONE]` lines drive a
+  progress bar in the panel header, with an ETA from the pace so far
+  (`preparationSecondsLeft`). The panel opens by itself when preparation begins.
+- **Dev aids:** `--download-model`; `SLIPSTREAM_MENUBAR_MODEL_REPO`/`_MODEL_DIR` (e.g.
+  `hf-internal-testing/tiny-random-gpt2`, 12.5 MB) and `SLIPSTREAM_MENUBAR_LOG` (for staging a
+  preparation with `fake-server.py --lock-repo … --outage 0 100000`, a fake checkout repo,
+  `useCheckout` and `defaults write SlipstreamMenubar spawnedServerPid -int <pid>`).
 - **Installer** (`ReleaseInstaller` + `InstallWindow`):
   - GitHub API `releases/latest` of `config.releaseRepository` (default `mzinner/slipstream`) →
     `SHA256SUMS` → `ReleasePackages.select` (the newest `-macos<N>-arm-64bit.zip` with N ≤ the

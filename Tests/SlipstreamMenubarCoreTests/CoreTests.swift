@@ -437,3 +437,79 @@ final class ReleasePackagesTests: XCTestCase {
         XCTAssertTrue(ReleasePackages.superseded(["26.10.0"], installed: "26.10.0").isEmpty)
     }
 }
+
+final class ModelSetupTests: XCTestCase {
+    func testTotalSizeSumsTheFilesOfAHubTree() {
+        let tree = Data(#"[{"type":"file","path":"a.gguf","size":45566928224},{"type":"directory","path":"MTP"},{"type":"file","path":"README.md","size":2351}]"#.utf8)
+        XCTAssertEqual(ModelSpec.totalSize(ofTree: tree), 45_566_930_575)
+        XCTAssertNil(ModelSpec.totalSize(ofTree: Data("{}".utf8)))
+    }
+
+    func testTheDefaultModelIsTheReadmesSwiftVariant() {
+        let model = ModelSpec.swiftQwen38FlashNext
+        XCTAssertEqual(model.repository, "nitinpanj/Swift-Qwen3.8-Flash-Next-Q4_0-Q8out-v3-GGUF")
+        XCTAssertTrue(model.folderURL.path.hasSuffix("/models/swift-qwen38-flash-next-v3"))
+    }
+
+    func testModelPresence() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        XCTAssertFalse(ModelPresence.isAvailable(""))
+        XCTAssertFalse(ModelPresence.isAvailable(folder.path), "missing folder")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        XCTAssertFalse(ModelPresence.isAvailable(folder.path), "empty folder")
+        try Data("x".utf8).write(to: folder.appendingPathComponent("model-00001-of-00003.gguf"))
+        XCTAssertTrue(ModelPresence.isAvailable(folder.path))
+        XCTAssertTrue(ModelPresence.isAvailable("owner/repo"), "Hub ids are fetched by the launcher")
+        XCTAssertGreaterThan(ModelPresence.allocatedSize(of: folder), 0)
+    }
+
+    func testOnly64GBMacsRaiseTheGPULimit() {
+        XCTAssertTrue(MachineCheck.needsGPULimitRaise(memoryGiB: 64))
+        XCTAssertFalse(MachineCheck.needsGPULimitRaise(memoryGiB: 48))
+        XCTAssertFalse(MachineCheck.needsGPULimitRaise(memoryGiB: 128))
+        XCTAssertEqual(GPUMemoryLimit.command(megabytes: 59392), "/usr/sbin/sysctl iogpu.wired_limit_mb=59392")
+        XCTAssertNotNil(GPUMemoryLimit.currentMB(), "the sysctl exists on Apple Silicon")
+    }
+
+    func testTransferEstimate() {
+        var estimator = TransferEstimator(window: 20)
+        let start = Date(timeIntervalSinceReferenceDate: 0)
+        estimator.add(bytes: 0, at: start)
+        XCTAssertNil(estimator.bytesPerSecond)
+        estimator.add(bytes: 500_000_000, at: start.addingTimeInterval(10))  // 50 MB/s
+        XCTAssertEqual(estimator.bytesPerSecond ?? 0, 50_000_000, accuracy: 1)
+        XCTAssertEqual(estimator.secondsRemaining(total: 3_500_000_000) ?? 0, 60, accuracy: 0.01)
+        XCTAssertEqual(TransferEstimator.describe(30), "less than a minute")
+        XCTAssertEqual(TransferEstimator.describe(240), "about 4 min")
+        XCTAssertEqual(TransferEstimator.describe(4_320), "about 1 h 12 min")
+    }
+
+    func testGPULimitSettingsDefaultAndValidate() throws {
+        let config = try JSONDecoder().decode(ServerConfig.self, from: Data(#"{"model":"/m"}"#.utf8))
+        XCTAssertTrue(config.raiseGPULimit)
+        XCTAssertEqual(config.gpuWiredLimitMB, 59392)
+        var bad = config
+        bad.gpuWiredLimitMB = 100
+        XCTAssertTrue(bad.validationErrors(installation: nil).contains { $0.contains("GPU memory limit") })
+    }
+}
+
+final class DiskCheckTests: XCTestCase {
+    private let gb: Int64 = 1_000_000_000
+
+    func testTenGigabytesMustRemainAfterTheDownload() {
+        XCTAssertEqual(DiskCheck.evaluate(total: 100 * gb, downloaded: 0, free: 105 * gb), .insufficient(shortBy: 5 * gb))
+        XCTAssertEqual(DiskCheck.evaluate(total: 100 * gb, downloaded: 0, free: 110 * gb),
+                       .noRoomToPrepare(shortBy: 100 * gb))
+        XCTAssertEqual(DiskCheck.evaluate(total: 100 * gb, downloaded: 0, free: 210 * gb), .ok)
+    }
+
+    func testAPartialDownloadCountsTowardsTheModel() {
+        // 60 GB already on disk: 40 GB to go, and 10 GB must remain.
+        XCTAssertEqual(DiskCheck.evaluate(total: 100 * gb, downloaded: 60 * gb, free: 50 * gb),
+                       .noRoomToPrepare(shortBy: 100 * gb))
+        XCTAssertEqual(DiskCheck.evaluate(total: 100 * gb, downloaded: 60 * gb, free: 45 * gb),
+                       .insufficient(shortBy: 5 * gb))
+    }
+}

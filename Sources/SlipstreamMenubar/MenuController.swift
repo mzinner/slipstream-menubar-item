@@ -23,6 +23,7 @@ final class MenuController: NSObject, NSMenuDelegate {
     private let detailItem = NSMenuItem()
     private var startItem: NSMenuItem!
     private var installItem: NSMenuItem!
+    private var downloadModelItem: NSMenuItem!
     private var stopItem: NSMenuItem!
     private var forceStopItem: NSMenuItem!
     private var panelItem: NSMenuItem!
@@ -34,6 +35,8 @@ final class MenuController: NSObject, NSMenuDelegate {
         var togglePanel: () -> Void
         /// Opens the installer, offered when no Slipstream is installed.
         var install: () -> Void
+        /// Opens the model download, offered when the configured model is missing.
+        var downloadModel: () -> Void
         var isPanelVisible: () -> Bool
         var settings: () -> Void
         var about: () -> Void
@@ -60,6 +63,7 @@ final class MenuController: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
         startItem = add("Start Server", #selector(start))
         installItem = add("Install Slipstream…", #selector(install))
+        downloadModelItem = add("Download Model…", #selector(downloadModel))
         stopItem = add("Stop Server", #selector(stop))
         forceStopItem = add("Force Stop", #selector(forceStop))
         menu.addItem(.separator())
@@ -112,6 +116,7 @@ final class MenuController: NSObject, NSMenuDelegate {
         let installed = server.installation != nil
         startItem.isHidden = status.isActive || !installed
         installItem.isHidden = status.isActive || installed
+        downloadModelItem.isHidden = status.isActive || ModelPresence.isAvailable(server.config.model)
         stopItem.isHidden = !status.isActive
         stopItem.isEnabled = status != .stopping
         forceStopItem.isHidden = !(status == .unresponsive || status == .stopping)
@@ -137,6 +142,7 @@ final class MenuController: NSObject, NSMenuDelegate {
     @objc private func forceStop() { actions.forceStop() }
     @objc private func togglePanel() { actions.togglePanel() }
     @objc private func install() { actions.install() }
+    @objc private func downloadModel() { actions.downloadModel() }
     @objc private func settings() { actions.settings() }
     @objc private func about() { actions.about() }
     @objc private func quit() { NSApp.terminate(nil) }

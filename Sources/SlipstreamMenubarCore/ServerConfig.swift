@@ -25,6 +25,10 @@ public struct ServerConfig: Codable, Equatable, Sendable {
     public var listenOnNetwork: Bool
     /// Start the server when the app launches if it is not already running.
     public var startServerOnLaunch: Bool
+    /// On a 64 GB Mac, set `iogpu.wired_limit_mb` to `gpuWiredLimitMB` before starting
+    /// the server (asks for an administrator password; the value resets at boot).
+    public var raiseGPULimit: Bool
+    public var gpuWiredLimitMB: Int
 
     public static let defaultReleaseRepository = "mzinner/slipstream"
 
@@ -39,7 +43,9 @@ public struct ServerConfig: Codable, Equatable, Sendable {
         allowedHosts: [String] = [],
         noWebUI: Bool = false,
         listenOnNetwork: Bool = false,
-        startServerOnLaunch: Bool = false
+        startServerOnLaunch: Bool = false,
+        raiseGPULimit: Bool = true,
+        gpuWiredLimitMB: Int = GPUMemoryLimit.recommendedMB
     ) {
         self.useCheckout = useCheckout
         self.repoPath = repoPath
@@ -52,6 +58,8 @@ public struct ServerConfig: Codable, Equatable, Sendable {
         self.noWebUI = noWebUI
         self.listenOnNetwork = listenOnNetwork
         self.startServerOnLaunch = startServerOnLaunch
+        self.raiseGPULimit = raiseGPULimit
+        self.gpuWiredLimitMB = gpuWiredLimitMB
     }
 
     /// Settings saved by an older version lack newer keys; those take their defaults.
@@ -72,6 +80,8 @@ public struct ServerConfig: Codable, Equatable, Sendable {
             ?? defaults.listenOnNetwork
         startServerOnLaunch = try container.decodeIfPresent(Bool.self, forKey: .startServerOnLaunch)
             ?? defaults.startServerOnLaunch
+        raiseGPULimit = try container.decodeIfPresent(Bool.self, forKey: .raiseGPULimit) ?? defaults.raiseGPULimit
+        gpuWiredLimitMB = try container.decodeIfPresent(Int.self, forKey: .gpuWiredLimitMB) ?? defaults.gpuWiredLimitMB
     }
 
     /// The address `--host` gets.
@@ -116,6 +126,9 @@ public struct ServerConfig: Codable, Equatable, Sendable {
         }
         if listenOnNetwork, let installation, !installation.supportsHost {
             errors.append("Listening on the network needs a Slipstream whose launcher has `serve --host`")
+        }
+        if raiseGPULimit, !(8192...Int(ProcessInfo.processInfo.physicalMemory / 1_048_576)).contains(gpuWiredLimitMB) {
+            errors.append("GPU memory limit must be between 8192 MB and this Mac's memory")
         }
         if !(1...65535).contains(port) {
             errors.append("Port must be between 1 and 65535")

@@ -228,6 +228,22 @@ private struct ServerHeader: View {
             if case .failed(let message) = server.status {
                 Text(message).font(.caption).foregroundStyle(.red).textSelection(.enabled)
             }
+            if case .preparing(let parts) = server.status {
+                // First start of a GGUF model: the converter writes <model>/prepared/.
+                VStack(alignment: .leading, spacing: 3) {
+                    ProgressView(value: Double(min(parts, LogProgress.preparationParts)),
+                                 total: Double(LogProgress.preparationParts))
+                    HStack {
+                        Text("Preparing the model for its first start: \(parts) of "
+                             + "\(LogProgress.preparationParts) parts")
+                        Spacer()
+                        Text(server.preparationSecondsLeft.map { TransferEstimator.describe($0) + " left" }
+                             ?? "estimating…")
+                    }
+                    .font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                }
+                .padding(.top, 4)
+            }
         }
     }
 }

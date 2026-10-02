@@ -10,12 +10,14 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     private let server: ServerController
     private let save: (ServerConfig, String?, _ restart: Bool) -> Void
     private let install: () -> Void
+    private let downloadModel: () -> Void
 
     init(server: ServerController, save: @escaping (ServerConfig, String?, Bool) -> Void,
-         install: @escaping () -> Void) {
+         install: @escaping () -> Void, downloadModel: @escaping () -> Void) {
         self.server = server
         self.save = save
         self.install = install
+        self.downloadModel = downloadModel
     }
 
     func show() {
@@ -24,6 +26,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             config: server.config, apiKey: server.apiKey ?? "", serverActive: server.status.isActive,
             locate: { [weak server] config in server?.installation(for: config) },
             install: install,
+            downloadModel: downloadModel,
             onSave: { [weak self] config, key, restart in
                 self?.save(config, key.isEmpty ? nil : key, restart)
                 self?.window?.close()
@@ -51,24 +54,29 @@ private struct SettingsView: View {
     let serverActive: Bool
     let locate: (ServerConfig) -> SlipstreamInstallation?
     let install: () -> Void
+    let downloadModel: () -> Void
     let onSave: (ServerConfig, String, Bool) -> Void
     let onCancel: () -> Void
 
     @State private var allowedHosts = ""
     @State private var port = ""
+    @State private var gpuLimit = ""
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var loginItemError: String?
 
     init(config: ServerConfig, apiKey: String, serverActive: Bool,
          locate: @escaping (ServerConfig) -> SlipstreamInstallation?, install: @escaping () -> Void,
+         downloadModel: @escaping () -> Void,
          onSave: @escaping (ServerConfig, String, Bool) -> Void, onCancel: @escaping () -> Void) {
         _config = State(initialValue: config)
         _apiKey = State(initialValue: apiKey)
         _allowedHosts = State(initialValue: config.allowedHosts.joined(separator: ", "))
         _port = State(initialValue: String(config.port))
+        _gpuLimit = State(initialValue: String(config.gpuWiredLimitMB))
         self.serverActive = serverActive
         self.locate = locate
         self.install = install
+        self.downloadModel = downloadModel
         self.onSave = onSave
         self.onCancel = onCancel
     }
@@ -76,6 +84,7 @@ private struct SettingsView: View {
     private var edited: ServerConfig {
         var result = config
         result.port = Int(port.trimmingCharacters(in: .whitespaces)) ?? 0
+        result.gpuWiredLimitMB = Int(gpuLimit.trimmingCharacters(in: .whitespaces)) ?? 0
         result.allowedHosts = allowedHosts.split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         return result
@@ -98,9 +107,24 @@ private struct SettingsView: View {
                     }
                     PathField(label: "Model", path: $config.model, directoriesOnly: true,
                               help: "A folder with GGUF shards or a prepared package, or a Hub repo id")
+                    if !ModelPresence.isAvailable(config.model) {
+                        HStack {
+                            Text("No model at this location.").font(.caption).foregroundStyle(.secondary)
+                            Spacer()
+                            Button("Download \(ModelSpec.default.title)…", action: downloadModel)
+                        }
+                    }
                     TextField("Port", text: $port)
                     TextField("Max context", text: $config.maxContext, prompt: Text("auto, e.g. 100K"))
                     TextField("Max memory", text: $config.maxMemory, prompt: Text("auto, e.g. 48G"))
+                }
+                SwiftUI.Section("Memory") {
+                    Toggle("Raise the GPU memory limit before starting", isOn: $config.raiseGPULimit)
+                    if config.raiseGPULimit {
+                        TextField("GPU memory limit (MB)", text: $gpuLimit, prompt: Text("59392"))
+                    }
+                    Text(gpuNote).font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 SwiftUI.Section("Access") {
                     HStack {
@@ -163,6 +187,16 @@ private struct SettingsView: View {
             .padding([.horizontal, .bottom], 20)
         }
         .frame(width: 520)
+    }
+
+    /// What the GPU limit step does on this Mac.
+    private var gpuNote: String {
+        let current = GPUMemoryLimit.currentMB().map { $0 == 0 ? "the macOS default" : "\($0) MB" } ?? "unknown"
+        let applies = MachineCheck.needsGPULimitRaise()
+            ? "This Mac has \(MachineCheck.memoryGiB) GB, so it is applied before each start"
+            : "This Mac has \(MachineCheck.memoryGiB) GB; it applies to 64 GB Macs only"
+        return "Sets iogpu.wired_limit_mb with an administrator password when it differs (it resets at "
+            + "every boot). \(applies). Now: \(current)."
     }
 
     private func setLoginItem(_ enabled: Bool) {

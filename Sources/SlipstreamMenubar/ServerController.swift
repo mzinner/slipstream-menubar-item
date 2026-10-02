@@ -23,6 +23,9 @@ final class ServerController: ObservableObject {
     /// The Slipstream that Start runs: the installed release, or a checkout if the
     /// settings ask for one. Nil means nothing is installed.
     @Published private(set) var installation: SlipstreamInstallation?
+    /// Seconds left of a first-start GGUF preparation, from its pace so far.
+    @Published private(set) var preparationSecondsLeft: TimeInterval?
+    private var preparationStart: (time: Date, parts: Int)?
 
     var config: ServerConfig {
         didSet {
@@ -32,11 +35,13 @@ final class ServerController: ObservableObject {
     }
     /// Directories searched for `slipstream` after ~/.local/bin: the app's PATH, and
     /// the login shell's once it is known.
-    private var searchPath = (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init)
+    private(set) var searchPath = (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init)
     var apiKey: String?
 
-    static let logURL = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Library/Logs/Slipstream/server.log")
+    /// `SLIPSTREAM_MENUBAR_LOG` points a test instance at another log.
+    static let logURL = ProcessInfo.processInfo.environment["SLIPSTREAM_MENUBAR_LOG"]
+        .map(URL.init(fileURLWithPath:))
+        ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/Slipstream/server.log")
     private static let spawnedPidKey = "spawnedServerPid"
 
     private var exitSource: DispatchSourceProcess?
@@ -139,6 +144,27 @@ final class ServerController: ObservableObject {
         external = livePid == nil ? readyOK : !ours
         listensOnNetwork = livePid != nil && (lock?.listensOnNetwork ?? false)
         if status != resolved { status = resolved }
+        estimatePreparation()
+    }
+
+    /// Time left of a preparation: its parts (48 layers, head, embedding, MTP, n-gram
+    /// table) take similar time when run in parallel, so the pace of the parts done so far
+    /// extrapolates well enough.
+    private func estimatePreparation() {
+        guard case .preparing(let parts) = status else {
+            preparationStart = nil
+            preparationSecondsLeft = nil
+            return
+        }
+        guard let start = preparationStart else {
+            preparationStart = (Date(), parts)
+            return
+        }
+        let done = parts - start.parts
+        let elapsed = Date().timeIntervalSince(start.time)
+        guard done > 0, elapsed > 5 else { return }
+        let remaining = max(0, LogProgress.preparationParts - parts)
+        preparationSecondsLeft = elapsed / Double(done) * Double(remaining)
     }
 
     private func probe(_ path: String, port: Int) async -> Bool {

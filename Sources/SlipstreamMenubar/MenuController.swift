@@ -14,7 +14,7 @@ import SlipstreamMenubarCore
 ///   Quit  ⌘Q
 @MainActor
 final class MenuController: NSObject, NSMenuDelegate {
-    private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+    private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let menu = NSMenu()
     private let server: ServerController
     private let actions: Actions
@@ -35,6 +35,8 @@ final class MenuController: NSObject, NSMenuDelegate {
         var settings: () -> Void
         var about: () -> Void
         var menuOpened: (Bool) -> Void
+        /// Prompt and output tokens per second while serving.
+        var readout: () -> (prompt: Double, output: Double)?
     }
 
     init(server: ServerController, actions: Actions) {
@@ -77,11 +79,15 @@ final class MenuController: NSObject, NSMenuDelegate {
     func update() {
         let status = server.status
         let running = status == .running
-        let symbol = running ? "bolt.horizontal.circle.fill" : "bolt.horizontal.circle"
-        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Slipstream \(status.title)")
-        image?.isTemplate = true
+        let rates = running ? actions.readout() : nil
+        let image = StatusItemImage.make(rates: rates)
+        image.accessibilityDescription = "Slipstream \(status.title)"
         statusItem.button?.image = image
+        statusItem.button?.imagePosition = .imageOnly
         statusItem.button?.appearsDisabled = !status.isActive
+        statusItem.button?.toolTip = rates.map {
+            "Slipstream: prompt \(Format.rate($0.prompt)), output \(Format.rate($0.output))"
+        } ?? "Slipstream: \(status.title)"
 
         let header = NSMutableAttributedString(
             string: "● ", attributes: [.foregroundColor: status.color, .font: NSFont.menuFont(ofSize: 0)])

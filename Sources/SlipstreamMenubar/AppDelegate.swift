@@ -27,7 +27,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             isPanelVisible: { [weak self] in self?.panel.isVisible ?? false },
             settings: { [weak self] in self?.settings.show() },
             about: { [weak self] in self?.showAbout() },
-            menuOpened: { [weak self] open in self?.menuOpen = open }
+            menuOpened: { [weak self] open in self?.menuOpen = open },
+            readout: { [weak self] in
+                guard let rates = self?.stats.rates else { return (0, 0) }
+                return (rates.promptTokensPerSecond, rates.outputTokensPerSecond)
+            }
         ))
 
         // Detect a server that is already running before deciding to start one.
@@ -54,10 +58,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pollTask?.cancel()  // the server keeps running
     }
 
-    /// One second while someone is looking or the state is changing, three otherwise.
+    /// One second while someone is looking or the state is changing; two while
+    /// serving, for the menu bar readout; three when stopped.
     private var pollInterval: Double {
-        let settled = server.status == .running || server.status == .stopped
-        return panel.isVisible || menuOpen || !settled ? 1 : 3
+        if panel.isVisible || menuOpen { return 1 }
+        switch server.status {
+        case .running: return 2
+        case .stopped: return 3
+        default: return 1
+        }
     }
 
     private func tick() async {
@@ -121,8 +130,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ])
     }
 
-    /// Development aid: renders the stats panel to a PNG once some history exists.
+    /// Development aid: renders the stats panel to a PNG once some history exists,
+    /// and the menu bar item, with and without readouts, beside it.
     private func snapshot(to url: URL) {
+        let itemURL = url.deletingPathExtension().appendingPathExtension("menubar.png")
+        writeMenuBarSample(to: itemURL)
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(45))
             let view = StatsContent(server: server, stats: stats)
@@ -134,6 +146,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
                 try? png.write(to: url)
             }
+        }
+    }
+
+    private func writeMenuBarSample(to url: URL) {
+        let samples = [StatusItemImage.make(rates: nil), StatusItemImage.make(rates: (342, 41.2)),
+                       StatusItemImage.make(rates: (12_400, 8.7)), StatusItemImage.make(rates: (0, 0))]
+        let scale: CGFloat = 4
+        let spacing: CGFloat = 12
+        let width = samples.reduce(spacing) { $0 + $1.size.width + spacing }
+        let size = NSSize(width: width * scale, height: StatusItemImage.height * scale)
+        let canvas = NSImage(size: size, flipped: false) { rect in
+            NSColor(white: 0.93, alpha: 1).setFill()
+            rect.fill()
+            var x = spacing
+            for sample in samples {
+                sample.draw(in: NSRect(x: x * scale, y: 0, width: sample.size.width * scale, height: size.height))
+                x += sample.size.width + spacing
+            }
+            return true
+        }
+        if let tiff = canvas.tiffRepresentation,
+           let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+            try? png.write(to: url)
         }
     }
 

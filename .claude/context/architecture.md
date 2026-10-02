@@ -76,8 +76,11 @@ Part of the project context; see [the index](../PROJECT_CONTEXT.md).
     while offline, which would exhaust GitHub's 60/h unauthenticated limit. Requests retry once on
     transient `URLError`s ("The network connection was lost." happened on a first request).
   - **Log:** `/usr/bin/log show --predicate 'subsystem == "local.slipstream.menubar"'` (notice
-    level; plain `log` is a zsh builtin). Verified 2026-10-03: a 26.10.0 copy updated itself to the
-    CI build of 26.10.1 and relaunched, in ~1.4 s.
+    level; plain `log` is a zsh builtin). 26.10.1 and older log nothing.
+  - **Verified 2026-10-03:** a 26.10.0-labelled copy updated itself to the CI build of 26.10.1 and
+    relaunched (~1.4 s); the *released* 26.10.1 zip updated itself to 26.10.2 on its second run
+    (its first run failed silently, most likely the lost-connection error it doesn't retry); five
+    fresh 26.10.2 launches all checked fine in ~130 ms. The retry itself has not been seen to fire.
   - **Notes:** the window lists the release body's `## Changes` bullets; the release workflow
     writes them from `git log <previous tag>..<tag>`, leaving out `.claude`-only commits.
   - **Install:** download `Slipstream-Menubar.app.<v>.zip`, verify against `SHA256SUMS.<v>.txt`,

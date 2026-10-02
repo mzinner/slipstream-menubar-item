@@ -4,10 +4,11 @@
 
 Native macOS (Swift 6 / SwiftUI + AppKit) menu bar item that starts, stops and watches a local
 [Slipstream](https://github.com/npanj/slipstream) LLM server checkout. The menu follows oMLX's
-menu bar app, reduced to: status, Start/Stop/Force Stop, Stats Panel, Settings, About, Quit. A
+menu bar app, reduced to: status, Start/Stop/Force Stop, Stats Panel, Open Web UI, Settings,
+About, Check for Updates, Quit. It also installs Slipstream and models, and updates itself. A
 floating panel shows live serving charts (throughput, KV cache, requests, engine memory) and system
 charts (CPU, GPU, memory, swap). Published on GitHub as `mzinner/slipstream-menubar-item` (public,
-MIT); first release v26.10.0.
+MIT); latest release v26.10.2.
 
 ## User decisions (keep unless asked to change)
 
@@ -47,7 +48,7 @@ MIT); first release v26.10.0.
 
 | File | What is in it |
 |---|---|
-| [context/architecture.md](context/architecture.md) | how the app works and why: targets, discovery, liveness, rates, history, installer, model download and picker, uninstall, GPU limit, preparation progress |
+| [context/architecture.md](context/architecture.md) | how the app works and why: targets, discovery, liveness, rates, history, installer, model download and picker, app self-update, uninstall, GPU limit, preparation progress |
 | [context/slipstream.md](context/slipstream.md) | what the app relies on from the Slipstream server, measured numbers, the Slipstream-side work and the fork, related repos |
 | [context/development.md](context/development.md) | environment, testing recipes, files that matter, release process |
 
@@ -62,10 +63,15 @@ MIT); first release v26.10.0.
     real repos, the uninstall dry run (7 items), the running vs installed version display.
   - Open Web UI (⌘O) works; the user confirmed it after a rebuild and relaunch.
   - Settings observe the server controller, so the version shown refreshes after an update.
-  - 64 unit tests, plus the release workflow.
-- **Released:** v26.10.0 only (ad-hoc signed, not notarized; users need *Open Anyway* or `xattr -dr
-  com.apple.quarantine`). Everything since (installer, model download and picker, GPU limit,
-  preparation progress, Open Web UI, Uninstall and Cleanup) is committed and pushed but unreleased.
+  - App self-update: released 26.10.1 → 26.10.2 updated itself and relaunched (see
+    architecture.md).
+  - 69 unit tests, plus the release workflow.
+- **Released:** v26.10.0, v26.10.1 (has the update check but retries a failed check on every
+  poll), v26.10.2 (current; ad-hoc signed, not notarized; a browser download needs *Open Anyway*
+  or `xattr -dr com.apple.quarantine`, an in-app update does not).
+- **The user's running copy** (pid 2874 at checkpoint time) started from `build/` with code from
+  before the updater. `build/` now holds a 26.10.2 build; the user was told to quit and reopen it.
+  There is no copy in /Applications.
 - **Not verified by Claude:** clicking Settings or the compact toggle in the live UI, Open at login
   (needs the app in /Applications), the bottom-fade behaviour in the live window, a real full
   uninstall (never run it on the user's Mac). Screenshots in the README were taken by the user.
@@ -85,13 +91,16 @@ MIT); first release v26.10.0.
    `local/all-fixes` branch and the `fork` remote there.
 7. The release workflow only runs on tags; a push/PR workflow running `swift test` would catch
    Swift 6.2 breakage earlier.
-8. Tag a new app release (e.g. v26.10.1) to ship the work since v26.10.0. Not asked for yet.
+8. A stable signing identity (self-signed certificate in the release workflow, or a Developer
+   ID) would stop macOS asking for Keychain access after each update. Offered, not decided.
 9. Fork: the launcher now refuses the Splash 1.0 packages (minimal version, finished
    2026-10-02): `923c9fa` on `main`, and the same change alone on `fix/v2-only-packages`
    (`b2d9640`, on `upstream/main`) for a later PR. Pushed; released as fork v26.10.2. Left out on
    purpose: `ci.yml`'s model list, `dev/native.mk` vision fixtures, tests that use the old names as
    example ids, `DEVELOPMENT.md`, benchmarks.
-10. `target/draft-vocab.bin` is not produced by the GGUF path (optional; it would speed up the MTP
+10. Suggested to the user: install the 26.10.2 dmg into /Applications (Open at login needs it,
+   and updates then have a normal home).
+11. `target/draft-vocab.bin` is not produced by the GGUF path (optional; it would speed up the MTP
    draft head). It is on the Hub in `nitinpanj/Swift-Qwen3.8-Flash-Next-Splash`.
 
 ## Gotchas / things not to repeat
@@ -120,14 +129,23 @@ MIT); first release v26.10.0.
 - One-second rate deltas swing between 0 and 2× because MTP drafts in bursts; hence the 3 s window.
 - `git cherry-pick` has no `-q`; `gh repo fork --remote` cannot be combined with a repo argument.
 - The engine's `decode_tokens_per_second` (~660) is not a client-facing rate. Never display it.
+- `scripts/build-app.sh` replaces `build/Slipstream Menubar.app`, which the user's running copy may
+  have been started from. Build test copies, then copy them elsewhere, and rebuild `build/` cleanly.
+- In zsh, `log` is a builtin (use `/usr/bin/log`), and `echo =====` fails (`=word` expansion).
+  `Logger.info` is not kept in the log store; the updater logs at `notice`.
+- Swift traps on an inverted range (`8192...ram` on a runner with < 8 GB): compare instead.
 
 ## Git state
 
 ```
 $ git status --short
+ M .claude/PROJECT_CONTEXT.md
+ M .claude/context/architecture.md
+ M .claude/context/development.md
 $ git branch --show-current
 main
 ```
 
-At checkpoint time: clean; everything is committed and pushed to both remotes. The Slipstream fork's
-`main` and `fix/v2-only-packages` are pushed, and v26.10.2 is released.
+At checkpoint time: only this checkpoint's context edits are uncommitted, and they are committed
+and pushed to both remotes right after. Code and tags up to v26.10.2 are pushed. The Slipstream
+fork's `main` and `fix/v2-only-packages` are pushed, and fork v26.10.2 is released.

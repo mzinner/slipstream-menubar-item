@@ -20,7 +20,7 @@ Part of the project context; see [the index](../PROJECT_CONTEXT.md).
 
 ## Testing recipes
 
-- **Unit tests:** `make test` (31 XCTest cases, including a real `/metrics` capture in
+- **Unit tests:** `make test` (69 XCTest cases, including a real `/metrics` capture in
   `Tests/.../Fixtures/metrics.txt`). `make app` builds `build/Slipstream Menubar.app`; `make run`
   opens it with `--show-panel`; `make install` copies it to /Applications (needed for Open at login).
 - **Visual checks:**
@@ -36,6 +36,14 @@ Part of the project context; see [the index](../PROJECT_CONTEXT.md).
   - Use `SLIPSTREAM_MENUBAR_CONFIG=<json>`, and stop it by its PID.
   - With `scripts/fake-server.py` (`--outage START END`, `--busy`, `--served N`, `--lock-repo DIR`),
     and a config whose `repoPath` is the fake repo, it shows gaps, busy-at-launch etc.
+- **App self-update end to end:** build an "old" copy with `MARKETING_VERSION=<older>
+  scripts/build-app.sh`, copy it to a scratch folder (not `build/`, which the user runs from), run
+  `"<copy>/Contents/MacOS/SlipstreamMenubar" --update-now`, then poll the bundle's
+  `CFBundleShortVersionString`. Success = the new version on disk, `codesign --verify` passes, no
+  `$TMPDIR/slipstream-menubar-update-*` left, and a process from that path *without*
+  `--update-now` (the relaunch). Read the log with `/usr/bin/log show --predicate 'subsystem ==
+  "local.slipstream.menubar"'`. Kill test copies afterwards: each adds a menu bar item. Or
+  download a real release zip with `gh release download` as the old copy.
 - **Saturation (`/ready` 503):** three concurrent chat requests with a ~5K-token prompt.
 - **Memory:** sample `footprint -p <pid>` (`phys_footprint`) once a minute for over 5 minutes, with
   the panel open and closed. Don't rebuild during it.
@@ -68,6 +76,10 @@ Part of the project context; see [the index](../PROJECT_CONTEXT.md).
 - `.claude/commands/checkpoint.md`: the `/checkpoint` command that maintains this file (committed).
 - `Sources/SlipstreamMenubarCore/Installation.swift`: `SlipstreamInstallation`, `InstallationLocator`
   (find, `serveLocks`, `loginShellPath`), `ReleasePackages` (select, version, superseded).
+- `Sources/SlipstreamMenubarCore/AppUpdate.swift`: `AppRelease` (GitHub JSON, `## Changes`),
+  `isNewer`, `isCheckDue` (20 h / 1 h retry), `checksum`, `swapCommand`, `relaunchScript`.
+- `Sources/SlipstreamMenubar/AppUpdater.swift`: the updater's phases, check, install and swap, and
+  its window. `FileDownload.swift`: the shared download with progress.
 - `Sources/SlipstreamMenubar/ReleaseInstaller.swift`, `InstallWindow.swift`: download/verify/
   unpack/link with phases, and the progress window. `--install-latest` (dev aid) opens it and starts.
 - `scripts/fake-server.py`: stand-in server for tests (gaps, busy `/ready`, served requests,
@@ -94,11 +106,16 @@ Part of the project context; see [the index](../PROJECT_CONTEXT.md).
 2. `git tag -a vYY.MM.N -m "Slipstream Menubar YY.MM.N"`, then `git push github vYY.MM.N` (and
    `origin`).
 3. The workflow (~1–3 min, macOS arm64 runners can queue) tests, builds, and publishes
-   `Slipstream-Menubar.app.<ver>.dmg` (~354 KB), `Slipstream-Menubar.app.<ver>.zip` (~294 KB) and
-   `SHA256SUMS.<ver>.txt` with install notes. Watch it with
+   `Slipstream-Menubar.app.<ver>.dmg` (~856 KB), `Slipstream-Menubar.app.<ver>.zip` (~756 KB) and
+   `SHA256SUMS.<ver>.txt`. The notes (`NOTES.md`, `body_path`) start with `## Changes`: `git log`
+   since the previous `v*` tag, without `.claude`-only commits; the update window shows that list,
+   so commit subjects are user-facing. Watch it with
    `gh run watch <id> -R mzinner/slipstream-menubar-item`. To rebuild an existing release's files:
    `gh workflow run release.yml -R mzinner/slipstream-menubar-item -f tag=vYY.MM.N`. It uploads
    the new files but does not delete old ones; remove those with `gh release delete-asset`.
    A `.app` cannot be a release asset by itself (it is a folder), hence the zip and the dmg.
+   **The runner has under 8 GB of RAM:** tests must not depend on this Mac's memory (v26.10.1 failed
+   twice on that). If a tag's build fails before publishing, fix, commit, and move the tag
+   (`git tag -d`, `git push <remote> :refs/tags/<tag>` on both remotes, re-tag, push).
 4. Verify with `gh release download`, `shasum -a 256 -c`, the `Info.plist` version, and
    `codesign --verify --deep --strict`.

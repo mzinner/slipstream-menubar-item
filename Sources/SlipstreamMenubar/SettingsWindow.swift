@@ -24,7 +24,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         // A fresh form each time, so it always starts from the saved values.
         let view = SettingsView(
             config: server.config, apiKey: server.apiKey ?? "", serverActive: server.status.isActive,
-            locate: { [weak server] config in server?.installation(for: config) },
+            server: server,
             install: install,
             downloadModel: downloadModel,
             onSave: { [weak self] config, key, restart in
@@ -52,7 +52,9 @@ private struct SettingsView: View {
     @State var config: ServerConfig
     @State var apiKey: String
     let serverActive: Bool
-    let locate: (ServerConfig) -> SlipstreamInstallation?
+    /// Observed so the installation shown follows an install or update made while the
+    /// window is open.
+    @ObservedObject var server: ServerController
     let install: () -> Void
     let downloadModel: () -> Void
     let onSave: (ServerConfig, String, Bool) -> Void
@@ -65,7 +67,7 @@ private struct SettingsView: View {
     @State private var loginItemError: String?
 
     init(config: ServerConfig, apiKey: String, serverActive: Bool,
-         locate: @escaping (ServerConfig) -> SlipstreamInstallation?, install: @escaping () -> Void,
+         server: ServerController, install: @escaping () -> Void,
          downloadModel: @escaping () -> Void,
          onSave: @escaping (ServerConfig, String, Bool) -> Void, onCancel: @escaping () -> Void) {
         _config = State(initialValue: config)
@@ -74,7 +76,7 @@ private struct SettingsView: View {
         _port = State(initialValue: String(config.port))
         _gpuLimit = State(initialValue: String(config.gpuWiredLimitMB))
         self.serverActive = serverActive
-        self.locate = locate
+        self.server = server
         self.install = install
         self.downloadModel = downloadModel
         self.onSave = onSave
@@ -91,7 +93,7 @@ private struct SettingsView: View {
     }
 
     var body: some View {
-        let installation = locate(edited)
+        let installation = server.installation(for: edited)
         let errors = edited.validationErrors(installation: installation)
         VStack(alignment: .leading, spacing: 0) {
             Form {

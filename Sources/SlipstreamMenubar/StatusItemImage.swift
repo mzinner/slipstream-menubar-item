@@ -23,9 +23,8 @@ enum StatusItemImage {
 
     /// Width of the widest readout, so the item never changes size as values change.
     private static let readoutWidth: CGFloat = {
-        // The longest forms below the maximum: three digits, or two with a decimal.
-        let candidates = ["↑" + compact(maximumShown), "↓" + compact(99.9)]
-        return ceil(candidates.map { NSAttributedString(string: $0, attributes: [.font: font]).size().width }.max()!)
+        let widest = NSAttributedString(string: "↑" + compact(maximumShown), attributes: [.font: font])
+        return ceil(widest.size().width)
     }()
 
     /// - Parameter rates: prompt and output tokens per second; nil shows the bolt alone.
@@ -78,16 +77,13 @@ enum StatusItemImage {
         string.draw(at: NSPoint(x: right - string.size().width, y: baseline + font.descender))
     }
 
-    /// At most four characters: "0", "9.5", "41.2", "340", "1.2K", "12K".
+    /// Whole numbers only: "0", "41", "340", "12K", "3M".
     static func compact(_ value: Double) -> String {
         let value = max(0, value)
         switch value {
-        case ..<0.05: return "0"
-        case ..<99.95: return String(format: "%.1f", value)
         case ..<999.5: return String(format: "%.0f", value)
-        case ..<9_950: return String(format: "%.1fK", value / 1000)
         case ..<999_500: return String(format: "%.0fK", value / 1000)
-        default: return String(format: "%.1fM", value / 1_000_000)
+        default: return String(format: "%.0fM", value / 1_000_000)
         }
     }
 }

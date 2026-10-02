@@ -22,6 +22,7 @@ final class MenuController: NSObject, NSMenuDelegate {
     private let headerItem = NSMenuItem()
     private let detailItem = NSMenuItem()
     private var startItem: NSMenuItem!
+    private var installItem: NSMenuItem!
     private var stopItem: NSMenuItem!
     private var forceStopItem: NSMenuItem!
     private var panelItem: NSMenuItem!
@@ -31,6 +32,8 @@ final class MenuController: NSObject, NSMenuDelegate {
         var stop: () -> Void
         var forceStop: () -> Void
         var togglePanel: () -> Void
+        /// Opens the installer, offered when no Slipstream is installed.
+        var install: () -> Void
         var isPanelVisible: () -> Bool
         var settings: () -> Void
         var about: () -> Void
@@ -56,6 +59,7 @@ final class MenuController: NSObject, NSMenuDelegate {
         menu.addItem(detailItem)
         menu.addItem(.separator())
         startItem = add("Start Server", #selector(start))
+        installItem = add("Install Slipstream…", #selector(install))
         stopItem = add("Stop Server", #selector(stop))
         forceStopItem = add("Force Stop", #selector(forceStop))
         menu.addItem(.separator())
@@ -91,8 +95,9 @@ final class MenuController: NSObject, NSMenuDelegate {
 
         let header = NSMutableAttributedString(
             string: "● ", attributes: [.foregroundColor: status.color, .font: NSFont.menuFont(ofSize: 0)])
+        let title = !status.isActive && server.installation == nil ? "Slipstream not installed" : status.title
         header.append(NSAttributedString(
-            string: status.title + (server.external && status.isActive ? " (started elsewhere)" : ""),
+            string: title + (server.external && status.isActive ? " (started elsewhere)" : ""),
             attributes: [.foregroundColor: NSColor.labelColor, .font: NSFont.boldSystemFont(ofSize: 0)]))
         headerItem.attributedTitle = header
 
@@ -103,7 +108,10 @@ final class MenuController: NSObject, NSMenuDelegate {
         detailItem.title = detail.joined(separator: " · ")
         detailItem.isHidden = detail.isEmpty
 
-        startItem.isHidden = status.isActive
+        // Without an installation there is nothing to start: offer to install one.
+        let installed = server.installation != nil
+        startItem.isHidden = status.isActive || !installed
+        installItem.isHidden = status.isActive || installed
         stopItem.isHidden = !status.isActive
         stopItem.isEnabled = status != .stopping
         forceStopItem.isHidden = !(status == .unresponsive || status == .stopping)
@@ -128,6 +136,7 @@ final class MenuController: NSObject, NSMenuDelegate {
     @objc private func stop() { actions.stop() }
     @objc private func forceStop() { actions.forceStop() }
     @objc private func togglePanel() { actions.togglePanel() }
+    @objc private func install() { actions.install() }
     @objc private func settings() { actions.settings() }
     @objc private func about() { actions.about() }
     @objc private func quit() { NSApp.terminate(nil) }

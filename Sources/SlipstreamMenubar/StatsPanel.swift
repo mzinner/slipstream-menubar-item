@@ -218,6 +218,11 @@ private struct ServerHeader: View {
                 if let pid = server.pid {
                     Text(verbatim: "pid \(pid)")
                 }
+                if let installation = server.installation {
+                    Text(verbatim: installation.displayName)
+                } else {
+                    Text("not installed")
+                }
             }
             .font(.caption).foregroundStyle(.secondary)
             if case .failed(let message) = server.status {

@@ -161,7 +161,7 @@ final class ServerConfigTests: XCTestCase {
 
     func testValidation() {
         let config = ServerConfig(repoPath: "/nonexistent", model: "", port: 0, maxContext: "lots", maxMemory: "48G")
-        let errors = config.validationErrors()
+        let errors = config.validationErrors(installation: nil)
         XCTAssertEqual(errors.count, 4, "\(errors)")
     }
 
@@ -248,14 +248,18 @@ final class NetworkAccessTests: XCTestCase {
         try FileManager.default.createDirectory(at: repo.appendingPathComponent("install"),
                                                 withIntermediateDirectories: true)
         let launcher = repo.appendingPathComponent("install/launcher.py")
+        let script = repo.appendingPathComponent("slipstream")
+        try Data("#!/bin/sh\n".utf8).write(to: script)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
         var config = ServerConfig(repoPath: repo.path, model: "/m", listenOnNetwork: true)
         try Data(#"server.add_argument("--port")"#.utf8).write(to: launcher)
-        XCTAssertFalse(config.launcherSupportsHost())
-        XCTAssertTrue(config.validationErrors().contains { $0.contains("--host") })
+        let checkout = try XCTUnwrap(SlipstreamInstallation.checkout(at: repo))
+        XCTAssertFalse(checkout.supportsHost)
+        XCTAssertTrue(config.validationErrors(installation: checkout).contains { $0.contains("--host") })
         try Data(#"server.add_argument("--host", default="127.0.0.1")"#.utf8).write(to: launcher)
-        XCTAssertTrue(config.launcherSupportsHost())
+        XCTAssertTrue(checkout.supportsHost)
         config.listenOnNetwork = false
-        XCTAssertFalse(config.validationErrors().contains { $0.contains("--host") })
+        XCTAssertFalse(config.validationErrors(installation: checkout).contains { $0.contains("--host") })
     }
 
     func testAddressesExcludeLoopback() {
@@ -306,5 +310,130 @@ final class DataGapTests: XCTestCase {
         series.append(1, at: time(1), segment: 0)
         series.append(2, at: time(9), segment: 1)
         XCTAssertEqual(series.points.map(\.segment), [0, 1])
+    }
+}
+
+final class InstallationTests: XCTestCase {
+    private var root: URL!
+
+    override func setUpWithError() throws {
+        root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: root)
+    }
+
+    private func executable(_ url: URL) throws {
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("#!/bin/sh\n".utf8).write(to: url)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+    }
+
+    /// <root>/share/<version>/{bin/slipstream, release.json, install/launcher.py}, linked from <root>/bin.
+    private func makeRelease(_ version: String, host: Bool = true) throws -> URL {
+        let package = root.appendingPathComponent("share/\(version)")
+        try executable(package.appendingPathComponent("bin/slipstream"))
+        try Data(#"{"version": "\#(version)"}"#.utf8).write(to: package.appendingPathComponent("release.json"))
+        try FileManager.default.createDirectory(at: package.appendingPathComponent("install"), withIntermediateDirectories: true)
+        try Data((host ? #"add_argument("--host")"# : "").utf8)
+            .write(to: package.appendingPathComponent("install/launcher.py"))
+        let bin = root.appendingPathComponent("bin")
+        try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+        try? FileManager.default.removeItem(at: bin.appendingPathComponent("slipstream"))
+        try FileManager.default.createSymbolicLink(at: bin.appendingPathComponent("slipstream"),
+                                                   withDestinationURL: package.appendingPathComponent("bin/slipstream"))
+        return bin
+    }
+
+    private func makeCheckout() throws -> URL {
+        let checkout = root.appendingPathComponent("checkout")
+        try executable(checkout.appendingPathComponent("slipstream"))
+        try FileManager.default.createDirectory(at: checkout.appendingPathComponent("install"), withIntermediateDirectories: true)
+        try Data().write(to: checkout.appendingPathComponent("install/launcher.py"))
+        return checkout
+    }
+
+    func testFindsTheReleaseThroughTheBinLink() throws {
+        let bin = try makeRelease("26.10.0")
+        let found = try XCTUnwrap(InstallationLocator.find(config: ServerConfig(), searchPath: [], binDirectory: bin))
+        XCTAssertEqual(found.kind, .release)
+        XCTAssertEqual(found.version, "26.10.0")
+        XCTAssertEqual(found.root.resolvingSymlinksInPath().lastPathComponent, "26.10.0")
+        XCTAssertEqual(found.launcher.path, bin.appendingPathComponent("slipstream").path, "runs the link, not the target")
+        XCTAssertTrue(found.supportsHost)
+        XCTAssertTrue(found.serveLockURL.path.hasSuffix("Slipstream-v2/runtime/serve.lock"))
+        XCTAssertEqual(found.displayName, "Slipstream 26.10.0")
+    }
+
+    func testFallsBackToPathAndRecognisesACheckoutThere() throws {
+        let checkout = try makeCheckout()
+        let empty = root.appendingPathComponent("nothing")
+        XCTAssertNil(InstallationLocator.find(config: ServerConfig(), searchPath: [], binDirectory: empty))
+        let found = try XCTUnwrap(InstallationLocator.find(config: ServerConfig(), searchPath: ["/nope", checkout.path],
+                                                           binDirectory: empty))
+        XCTAssertEqual(found.kind, .checkout)
+        XCTAssertEqual(found.serveLockURL, checkout.appendingPathComponent("build/runtime/serve.lock"))
+        XCTAssertFalse(found.supportsHost)
+    }
+
+    func testTheCheckoutSettingWinsOverAnInstalledRelease() throws {
+        let bin = try makeRelease("26.10.0")
+        let checkout = try makeCheckout()
+        var config = ServerConfig(repoPath: checkout.path)
+        config.useCheckout = true
+        XCTAssertEqual(InstallationLocator.find(config: config, searchPath: [], binDirectory: bin)?.kind, .checkout)
+        config.repoPath = root.appendingPathComponent("missing").path
+        XCTAssertNil(InstallationLocator.find(config: config, searchPath: [], binDirectory: bin))
+        XCTAssertTrue(config.validationErrors(installation: nil).contains { $0.contains("checkout") })
+    }
+
+    func testWatchesEveryLockAServerMayHaveWritten() throws {
+        let checkout = try makeCheckout()
+        let config = ServerConfig(repoPath: checkout.path)
+        let release = InstallationLocator.find(config: config, searchPath: [],
+                                               binDirectory: try makeRelease("26.10.0"))
+        let locks = InstallationLocator.serveLocks(installation: release, config: config)
+        XCTAssertEqual(locks.count, 2, "release data lock and the checkout's, without duplicates")
+        XCTAssertTrue(locks.contains(checkout.appendingPathComponent("build/runtime/serve.lock")))
+    }
+
+    func testNotInstalledIsAValidationError() {
+        let config = ServerConfig(model: "/m")
+        XCTAssertTrue(config.validationErrors(installation: nil).contains { $0.contains("not installed") })
+    }
+
+    func testOlderSettingsDefaultToTheInstalledRelease() throws {
+        let config = try JSONDecoder().decode(ServerConfig.self, from: Data(#"{"repoPath":"/r","model":"/m"}"#.utf8))
+        XCTAssertFalse(config.useCheckout)
+        XCTAssertEqual(config.releaseRepository, "mzinner/slipstream")
+    }
+}
+
+final class ReleasePackagesTests: XCTestCase {
+    let sums = """
+    aaa  slipstream-26.10.0-macos26-arm-64bit.zip
+    bbb  slipstream-26.10.0-macos27-arm-64bit.zip
+    ccc  slipstream-26.10.0-macos26-x86-64bit.zip
+    ddd  install.sh
+    """
+
+    func testPicksTheNewestPackageThisMacOSCanRun() {
+        XCTAssertEqual(ReleasePackages.select(from: sums, macOSMajor: 26)?.name, "slipstream-26.10.0-macos26-arm-64bit.zip")
+        XCTAssertEqual(ReleasePackages.select(from: sums, macOSMajor: 26)?.sha256, "aaa")
+        XCTAssertEqual(ReleasePackages.select(from: sums, macOSMajor: 28)?.sha256, "bbb")
+        XCTAssertNil(ReleasePackages.select(from: sums, macOSMajor: 15))
+    }
+
+    func testVersionFromThePackageFolder() {
+        XCTAssertEqual(ReleasePackages.version(fromPackageFolder: "slipstream-26.10.0-macos26-arm-64bit"), "26.10.0")
+        XCTAssertNil(ReleasePackages.version(fromPackageFolder: "something-else"))
+    }
+
+    func testKeepsTheInstalledAndTheNewestOtherVersion() {
+        let removed = ReleasePackages.superseded(["26.8.0", "26.10.0", "26.9.0", "notes", "26.9.10"], installed: "26.10.0")
+        XCTAssertEqual(Set(removed), ["26.8.0", "26.9.0"], "26.9.10 is newer than 26.9.0 numerically")
+        XCTAssertTrue(ReleasePackages.superseded(["26.10.0"], installed: "26.10.0").isEmpty)
     }
 }

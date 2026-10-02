@@ -65,6 +65,23 @@ MIT); first release v26.10.0.
   resizes/toggles (`statsPanelUserSized`). There's a 40 pt bottom fade only while there is more to
   scroll (`onScrollGeometryChange` on `visibleRect`). Every chart uses a fixed 34 pt y-axis label
   column, so charts align.
+- **Which Slipstream runs** (`Installation.swift`):
+  - `InstallationLocator.find` tries `~/.local/bin/slipstream`, then `slipstream` on the app's
+    PATH plus the login shell's (`$SHELL -l -i -c`, read once at launch), unless Settings → Run is
+    "Source checkout" (`useCheckout`).
+  - A release is recognised by `<root>/bin/slipstream` + `release.json` (through the symlink);
+    its lock is `~/Library/Application Support/Slipstream-v2/runtime/serve.lock`. A checkout's
+    is `build/runtime/serve.lock`.
+  - Refresh reads **all** candidate locks, so a server from either kind is found.
+  - With nothing installed, the menu shows **Install Slipstream…** instead of Start.
+- **Installer** (`ReleaseInstaller` + `InstallWindow`):
+  - GitHub API `releases/latest` of `config.releaseRepository` (default `mzinner/slipstream`) →
+    `SHA256SUMS` → `ReleasePackages.select` (the newest `-macos<N>-arm-64bit.zip` with N ≤ the
+    local major).
+  - The download runs on its own delegate `URLSession` for progress; the API calls use a plain
+    session, because async requests on the delegate session never complete.
+  - Then CryptoKit SHA-256, `ditto -x -k`, a move to `~/.local/share/slipstream/<version>`, the
+    `~/.local/bin/slipstream` symlink, and pruning to the two newest versions.
 
 ## Slipstream server contract (what the app relies on)
 
@@ -195,6 +212,10 @@ MIT); first release v26.10.0.
   `MARKETING_VERSION`, then `Slipstream-Menubar.app.<ver>.dmg` (app + Applications link),
   `….zip` and `SHA256SUMS.<ver>.txt` to a GitHub release.
 - `.claude/commands/checkpoint.md`: the `/checkpoint` command that maintains this file (committed).
+- `Sources/SlipstreamMenubarCore/Installation.swift`: `SlipstreamInstallation`, `InstallationLocator`
+  (find, `serveLocks`, `loginShellPath`), `ReleasePackages` (select, version, superseded).
+- `Sources/SlipstreamMenubar/ReleaseInstaller.swift`, `InstallWindow.swift`: download/verify/
+  unpack/link with phases, and the progress window. `--install-latest` (dev aid) opens it and starts.
 - `scripts/fake-server.py`: stand-in server for tests (gaps, busy `/ready`, served requests,
   serve.lock).
 - `Tests/SlipstreamMenubarCoreTests/Fixtures/metrics.txt`: a real `/metrics` capture (also used by
@@ -301,6 +322,22 @@ MIT); first release v26.10.0.
     64 GB; 8 workers ran the Mac out of memory). The manifest is written last.
 - **PR #5:** `serve --host` passed to the server; `serve.lock` records `host`.
   Tested over the LAN: 401/200/403 behave as documented above.
+- **Fork releases** (`mzinner/slipstream`, own commits on top of the PR stack on `main`):
+  - **Workflow:** `.github/workflows/release.yml` on `v*` tags, on `macos-26` (Xcode 26.6 has the
+    Metal toolchain preinstalled; a probe proved `make all` takes 31 s and `make package` 47 s).
+  - **Steps:** `make package RELEASE_VERSION=<v>`, build the dequantization dylib, then repackage
+    `dist/splash-<v>-arm64-macos26.tar.gz` as `slipstream-<v>-macos26-arm-64bit.zip`.
+  - **Added to the package:** `bin/slipstream` (realpath wrapper → `python/bin/python3
+    install/launcher.py`), the GGUF converter (`models/qwen4exp/tools`, `dev/tools`) and
+    `build/libslipstream-dequant.dylib`, so no Xcode is needed on the user's Mac.
+  - **Checks and outputs:** smoke-tested in CI; publishes the zip (71 MB), `SHA256SUMS` and
+    `install.sh`, with MariaDB-Shell-style install notes.
+  - **`install.sh`** (POSIX sh, our own code modelled on mariadb-shell's GPL script): env
+    `SLIPSTREAM_TAG/PREFIX/BINDIR/REPO/TOKEN`, a `gh auth token` fallback, keeps 2 versions.
+  - **Upstream CI** is disabled in the fork's settings (`gh workflow disable`) rather than edited,
+    to keep `ci.yml` rebase-clean. v26.10.0 is published.
+  - **Verified on this Mac:** the app's installer installed it into `~/.local`, and it serves the
+    prepared model correctly (17 × 23 = 391, "Tokyo").
 
 ## Git state
 

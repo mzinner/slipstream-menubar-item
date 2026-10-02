@@ -10,20 +10,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var menu: MenuController!
     private var panel: StatsPanelController!
     private var settings: SettingsWindowController!
+    private var installer: InstallWindowController!
     private var pollTask: Task<Void, Never>?
     private var menuOpen = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         server = ServerController(config: store.load(), apiKey: APIKeyStore.load())
         panel = StatsPanelController(server: server, stats: stats) { [weak self] _ in self?.menu?.update() }
-        settings = SettingsWindowController(server: server) { [weak self] config, key, restart in
-            self?.apply(config, apiKey: key, restart: restart)
-        }
+        installer = InstallWindowController(
+            repository: { [weak self] in self?.server.config.releaseRepository ?? ServerConfig.defaultReleaseRepository },
+            onInstalled: { [weak self] in
+                self?.server.locate()
+                self?.menu.update()
+            })
+        settings = SettingsWindowController(
+            server: server,
+            save: { [weak self] config, key, restart in self?.apply(config, apiKey: key, restart: restart) },
+            install: { [weak self] in self?.installer.show() })
         menu = MenuController(server: server, actions: .init(
             start: { [weak self] in self?.start() },
             stop: { [weak self] in self?.server.stop(); self?.menu.update() },
             forceStop: { [weak self] in self?.server.forceStop(); self?.menu.update() },
             togglePanel: { [weak self] in self?.panel.toggle(); self?.menu.update() },
+            install: { [weak self] in self?.installer.show() },
             isPanelVisible: { [weak self] in self?.panel.isVisible ?? false },
             settings: { [weak self] in self?.settings.show() },
             about: { [weak self] in self?.showAbout() },
@@ -38,6 +47,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pollTask = Task { [weak self] in
             guard let self else { return }
             await self.tick()
+            // A slipstream that only the login shell's PATH reaches, e.g. Homebrew's.
+            await self.server.learnLoginShellPath()
             if self.server.config.startServerOnLaunch, !self.server.status.isActive {
                 self.start()
             }
@@ -48,6 +59,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if server.config.model.isEmpty { settings.show() }
         if CommandLine.arguments.contains("--show-panel") { panel.show() }
+        // Development aid: opens the installer and starts the download at once.
+        if CommandLine.arguments.contains("--install-latest") { installer.show(startImmediately: true) }
         if let index = CommandLine.arguments.firstIndex(of: "--snapshot"),
            CommandLine.arguments.indices.contains(index + 1) {
             snapshot(to: URL(fileURLWithPath: CommandLine.arguments[index + 1]))
@@ -112,10 +125,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
             .foregroundColor: NSColor.labelColor,
         ]
-        var lines = ["Start, stop and watch a local Slipstream server.",
-                     "Checkout: \((server.config.repoPath as NSString).abbreviatingWithTildeInPath)"]
-        if let build = EngineBuild.identifier(repo: server.config.repoURL) {
-            lines.append("Engine build: \(build)")
+        var lines = ["Start, stop and watch a local Slipstream server."]
+        if let installation = server.installation {
+            lines.append("\(installation.displayName): "
+                         + (installation.root.path as NSString).abbreviatingWithTildeInPath)
+            if installation.kind == .checkout, let build = EngineBuild.identifier(repo: installation.root) {
+                lines.append("Engine build: \(build)")
+            }
+        } else {
+            lines.append("Slipstream: not installed")
         }
         if let model = server.model ?? (server.config.model.isEmpty ? nil : server.config.model) {
             lines.append("Model: \((model as NSString).lastPathComponent)")

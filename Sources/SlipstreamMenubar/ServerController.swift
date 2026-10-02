@@ -20,10 +20,19 @@ final class ServerController: ObservableObject {
     @Published private(set) var external = false
     /// The running server accepts connections from other machines.
     @Published private(set) var listensOnNetwork = false
+    /// The Slipstream that Start runs: the installed release, or a checkout if the
+    /// settings ask for one. Nil means nothing is installed.
+    @Published private(set) var installation: SlipstreamInstallation?
 
     var config: ServerConfig {
-        didSet { if !status.isActive { port = config.port } }
+        didSet {
+            if !status.isActive { port = config.port }
+            locate()
+        }
     }
+    /// Directories searched for `slipstream` after ~/.local/bin: the app's PATH, and
+    /// the login shell's once it is known.
+    private var searchPath = (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init)
     var apiKey: String?
 
     static let logURL = FileManager.default.homeDirectoryForCurrentUser
@@ -45,6 +54,7 @@ final class ServerController: ObservableObject {
         configuration.timeoutIntervalForRequest = 2
         configuration.timeoutIntervalForResource = 3
         session = URLSession(configuration: configuration)
+        locate()
     }
 
     /// The pid this app last spawned, remembered across app restarts.
@@ -56,14 +66,41 @@ final class ServerController: ObservableObject {
         set { UserDefaults.standard.set(Int(newValue ?? 0), forKey: Self.spawnedPidKey) }
     }
 
+    // MARK: Installation
+
+    func locate() {
+        let found = installation(for: config)
+        if found != installation { installation = found }
+    }
+
+    /// What Start would run with these settings, for the settings window.
+    func installation(for config: ServerConfig) -> SlipstreamInstallation? {
+        InstallationLocator.find(config: config, searchPath: searchPath)
+    }
+
+    /// Adds the login shell's PATH (Homebrew, profile additions) to the search; it is
+    /// read off the main thread because a shell profile can take a moment.
+    func learnLoginShellPath() async {
+        let path = await Task.detached { InstallationLocator.loginShellPath() }.value
+        searchPath += path.filter { !searchPath.contains($0) }
+        locate()
+    }
+
     // MARK: Status
 
     func refresh() async {
-        let lock = ServeLock.read(from: config.serveLockURL)
+        locate()
+        // A server may have been started by any installation, so look at every lock.
+        var lock: ServeLock?
         var livePid: Int32?
-        if let lock, ServerProcessInspector.isSlipstreamServer(lock.pid) {
-            livePid = lock.pid
-        } else if let spawned = spawnedPid, ServerProcessInspector.isSlipstreamServer(spawned) {
+        for url in InstallationLocator.serveLocks(installation: installation, config: config) {
+            if let candidate = ServeLock.read(from: url), ServerProcessInspector.isSlipstreamServer(candidate.pid) {
+                lock = candidate
+                livePid = candidate.pid
+                break
+            }
+        }
+        if livePid == nil, let spawned = spawnedPid, ServerProcessInspector.isSlipstreamServer(spawned) {
             livePid = spawned  // between spawn and the launcher writing its lock
         }
         let probePort = livePid != nil ? (lock?.port ?? config.port) : config.port
@@ -153,8 +190,9 @@ final class ServerController: ObservableObject {
 
     func start() throws {
         guard !status.isActive else { return }
-        let errors = config.validationErrors()
-        guard errors.isEmpty else { throw StartError.invalidConfig(errors) }
+        locate()
+        let errors = config.validationErrors(installation: installation)
+        guard errors.isEmpty, let installation else { throw StartError.invalidConfig(errors) }
 
         let fileManager = FileManager.default
         try fileManager.createDirectory(at: Self.logURL.deletingLastPathComponent(),
@@ -163,7 +201,7 @@ final class ServerController: ObservableObject {
         try? fileManager.removeItem(at: previousLog)
         try? fileManager.moveItem(at: Self.logURL, to: previousLog)
 
-        let launcher = config.launcherURL.path
+        let launcher = installation.launcher.path
         let arguments = [launcher] + config.serveArguments()
         var environment = ProcessInfo.processInfo.environment
         // Apps get a minimal PATH; the launcher's build steps need the usual tools.
@@ -172,7 +210,7 @@ final class ServerController: ObservableObject {
             environment["SLIPSTREAM_V2_API_KEY"] = apiKey
         }
         let pid = try spawn(launcher, arguments: arguments, environment: environment,
-                            directory: config.repoURL.path, log: Self.logURL.path)
+                            directory: installation.root.path, log: Self.logURL.path)
 
         spawnedPid = pid
         exitDescription = nil

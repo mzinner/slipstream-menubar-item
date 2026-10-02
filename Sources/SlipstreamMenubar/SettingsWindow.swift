@@ -9,16 +9,21 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
     private let server: ServerController
     private let save: (ServerConfig, String?, _ restart: Bool) -> Void
+    private let install: () -> Void
 
-    init(server: ServerController, save: @escaping (ServerConfig, String?, Bool) -> Void) {
+    init(server: ServerController, save: @escaping (ServerConfig, String?, Bool) -> Void,
+         install: @escaping () -> Void) {
         self.server = server
         self.save = save
+        self.install = install
     }
 
     func show() {
         // A fresh form each time, so it always starts from the saved values.
         let view = SettingsView(
             config: server.config, apiKey: server.apiKey ?? "", serverActive: server.status.isActive,
+            locate: { [weak server] config in server?.installation(for: config) },
+            install: install,
             onSave: { [weak self] config, key, restart in
                 self?.save(config, key.isEmpty ? nil : key, restart)
                 self?.window?.close()
@@ -44,6 +49,8 @@ private struct SettingsView: View {
     @State var config: ServerConfig
     @State var apiKey: String
     let serverActive: Bool
+    let locate: (ServerConfig) -> SlipstreamInstallation?
+    let install: () -> Void
     let onSave: (ServerConfig, String, Bool) -> Void
     let onCancel: () -> Void
 
@@ -53,12 +60,15 @@ private struct SettingsView: View {
     @State private var loginItemError: String?
 
     init(config: ServerConfig, apiKey: String, serverActive: Bool,
+         locate: @escaping (ServerConfig) -> SlipstreamInstallation?, install: @escaping () -> Void,
          onSave: @escaping (ServerConfig, String, Bool) -> Void, onCancel: @escaping () -> Void) {
         _config = State(initialValue: config)
         _apiKey = State(initialValue: apiKey)
         _allowedHosts = State(initialValue: config.allowedHosts.joined(separator: ", "))
         _port = State(initialValue: String(config.port))
         self.serverActive = serverActive
+        self.locate = locate
+        self.install = install
         self.onSave = onSave
         self.onCancel = onCancel
     }
@@ -72,11 +82,20 @@ private struct SettingsView: View {
     }
 
     var body: some View {
-        let errors = edited.validationErrors()
+        let installation = locate(edited)
+        let errors = edited.validationErrors(installation: installation)
         VStack(alignment: .leading, spacing: 0) {
             Form {
                 SwiftUI.Section("Server") {
-                    PathField(label: "Slipstream checkout", path: $config.repoPath, directoriesOnly: true)
+                    Picker("Run", selection: $config.useCheckout) {
+                        Text("Installed release").tag(false)
+                        Text("Source checkout").tag(true)
+                    }
+                    if config.useCheckout {
+                        PathField(label: "Slipstream checkout", path: $config.repoPath, directoriesOnly: true)
+                    } else {
+                        InstalledRelease(installation: installation, install: install)
+                    }
                     PathField(label: "Model", path: $config.model, directoriesOnly: true,
                               help: "A folder with GGUF shards or a prepared package, or a Hub repo id")
                     TextField("Port", text: $port)
@@ -213,6 +232,32 @@ private struct NetworkNotes: View {
             }
             Text("Traffic is not encrypted. macOS may ask whether Python may accept incoming connections.")
                 .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// The installed release Start would run, or a way to install one.
+private struct InstalledRelease: View {
+    let installation: SlipstreamInstallation?
+    let install: () -> Void
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            if let installation {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(installation.displayName)
+                    Text(installation.launcher.path).font(.caption).foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+                Spacer()
+                Button("Update…", action: install)
+                    .help("Install the latest release; the two newest versions are kept")
+            } else {
+                Text("Not installed: no `slipstream` in ~/.local/bin or on PATH.")
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Install…", action: install)
+            }
         }
     }
 }

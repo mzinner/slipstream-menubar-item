@@ -24,11 +24,25 @@ either `Slipstream-Menubar.app.<version>.dmg` (open it and drag the app onto *Ap
 Privacy & Security → Open Anyway*, or run
 `xattr -dr com.apple.quarantine "/Applications/Slipstream Menubar.app"`.
 
+## Slipstream itself
+
+The app runs the Slipstream it finds at `~/.local/bin/slipstream`, else `slipstream` on your
+login shell's PATH. If there is none, the menu offers **Install Slipstream…**: it downloads the
+latest release of [mzinner/slipstream](https://github.com/mzinner/slipstream/releases), shows the
+progress, verifies the checksum, installs into `~/.local/share/slipstream/<version>` and links
+`~/.local/bin/slipstream`, keeping the two newest versions, as the release's `install.sh` does:
+
+```sh
+curl -fsSL https://github.com/mzinner/slipstream/raw/main/install.sh | sh
+```
+
+Settings → Server → Run can switch to a source checkout instead.
+
 ## Requirements
 
 - macOS 15 or later on Apple Silicon (the Slipstream engine itself needs 26.4)
 - Xcode or the Command Line Tools with Swift 6
-- A built Slipstream source checkout (`make` in the checkout)
+- Slipstream: installed by the app or `install.sh`, or a built source checkout
 
 ## Build and run
 

@@ -5,8 +5,13 @@ import Foundation
 /// The API key is not part of this file: it lives in the Keychain and reaches the
 /// server through its environment, never its command line.
 public struct ServerConfig: Codable, Equatable, Sendable {
-    /// The Slipstream source checkout that holds the `slipstream` launcher.
+    /// Run a source checkout instead of the installed release.
+    public var useCheckout: Bool
+    /// The Slipstream source checkout that holds the `slipstream` launcher, used when
+    /// `useCheckout` is on.
     public var repoPath: String
+    /// GitHub `owner/repo` that "Install Slipstream…" downloads releases from.
+    public var releaseRepository: String
     /// A local model directory (GGUF shards or a prepared package) or a Hub repo id.
     public var model: String
     public var port: Int
@@ -21,8 +26,12 @@ public struct ServerConfig: Codable, Equatable, Sendable {
     /// Start the server when the app launches if it is not already running.
     public var startServerOnLaunch: Bool
 
+    public static let defaultReleaseRepository = "mzinner/slipstream"
+
     public init(
+        useCheckout: Bool = false,
         repoPath: String = ServerConfig.defaultRepoPath(),
+        releaseRepository: String = ServerConfig.defaultReleaseRepository,
         model: String = "",
         port: Int = 8090,
         maxContext: String = "",
@@ -32,7 +41,9 @@ public struct ServerConfig: Codable, Equatable, Sendable {
         listenOnNetwork: Bool = false,
         startServerOnLaunch: Bool = false
     ) {
+        self.useCheckout = useCheckout
         self.repoPath = repoPath
+        self.releaseRepository = releaseRepository
         self.model = model
         self.port = port
         self.maxContext = maxContext
@@ -47,7 +58,10 @@ public struct ServerConfig: Codable, Equatable, Sendable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let defaults = ServerConfig()
+        useCheckout = try container.decodeIfPresent(Bool.self, forKey: .useCheckout) ?? defaults.useCheckout
         repoPath = try container.decodeIfPresent(String.self, forKey: .repoPath) ?? defaults.repoPath
+        releaseRepository = try container.decodeIfPresent(String.self, forKey: .releaseRepository)
+            ?? defaults.releaseRepository
         model = try container.decodeIfPresent(String.self, forKey: .model) ?? defaults.model
         port = try container.decodeIfPresent(Int.self, forKey: .port) ?? defaults.port
         maxContext = try container.decodeIfPresent(String.self, forKey: .maxContext) ?? defaults.maxContext
@@ -69,7 +83,7 @@ public struct ServerConfig: Codable, Equatable, Sendable {
     }
 
     public var repoURL: URL { URL(fileURLWithPath: (repoPath as NSString).expandingTildeInPath) }
-    public var launcherURL: URL { repoURL.appendingPathComponent("slipstream") }
+    /// The checkout's lock, also watched in release mode in case one runs from there.
     public var serveLockURL: URL { repoURL.appendingPathComponent("build/runtime/serve.lock") }
 
     /// Arguments after the launcher path.
@@ -88,24 +102,20 @@ public struct ServerConfig: Codable, Equatable, Sendable {
         return arguments
     }
 
-    /// Whether the checkout's launcher accepts `serve --host` (npanj/slipstream#5).
-    public func launcherSupportsHost(fileManager: FileManager = .default) -> Bool {
-        let launcher = repoURL.appendingPathComponent("install/launcher.py")
-        guard let source = try? String(contentsOf: launcher, encoding: .utf8) else { return false }
-        return source.contains("\"--host\"")
-    }
-
-    /// Problems that would make `slipstream serve` fail immediately, for the settings window.
-    public func validationErrors(fileManager: FileManager = .default) -> [String] {
+    /// Problems that would make `slipstream serve` fail immediately, for the settings
+    /// window, given the installation the app found for these settings.
+    public func validationErrors(installation: SlipstreamInstallation?) -> [String] {
         var errors: [String] = []
-        if !fileManager.isExecutableFile(atPath: launcherURL.path) {
-            errors.append("No `slipstream` launcher in \(repoURL.path)")
+        if installation == nil {
+            errors.append(useCheckout
+                ? "No Slipstream checkout with a `slipstream` launcher in \(repoURL.path)"
+                : "Slipstream is not installed (no `slipstream` in ~/.local/bin or on PATH)")
         }
         if model.trimmingCharacters(in: .whitespaces).isEmpty {
             errors.append("No model selected")
         }
-        if listenOnNetwork, !launcherSupportsHost(fileManager: fileManager) {
-            errors.append("Listening on the network needs a Slipstream checkout whose launcher has `serve --host`")
+        if listenOnNetwork, let installation, !installation.supportsHost {
+            errors.append("Listening on the network needs a Slipstream whose launcher has `serve --host`")
         }
         if !(1...65535).contains(port) {
             errors.append("Port must be between 1 and 65535")

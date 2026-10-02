@@ -87,13 +87,26 @@ struct StatsView: View {
     }
 }
 
+/// Compact view: shorter charts, tighter cards, no chart legends.
+private struct CompactStatsKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var compactStats: Bool {
+        get { self[CompactStatsKey.self] }
+        set { self[CompactStatsKey.self] = newValue }
+    }
+}
+
 /// The panel's sections, without the scroll view (which ImageRenderer cannot draw).
 struct StatsContent: View {
     @ObservedObject var server: ServerController
     @ObservedObject var stats: StatsModel
+    @AppStorage("compactStatsPanel") private var compact = false
 
     var body: some View {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: compact ? 8 : 14) {
                 ServerHeader(server: server, stats: stats)
                 if server.status == .running, let engine = stats.engine {
                     ServingSections(stats: stats, engine: engine)
@@ -105,13 +118,15 @@ struct StatsContent: View {
                 SystemSections(stats: stats)
             }
             .padding(.horizontal, 16)
-            .padding(.top, 16)
+            .padding(.top, compact ? 10 : 16)
+            .environment(\.compactStats, compact)
     }
 }
 
 private struct ServerHeader: View {
     @ObservedObject var server: ServerController
     @ObservedObject var stats: StatsModel
+    @AppStorage("compactStatsPanel") private var compact = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -122,6 +137,12 @@ private struct ServerHeader: View {
                     Text("started elsewhere").font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) { compact.toggle() }
+                } label: {
+                    Image(systemName: compact ? "rectangle.expand.vertical" : "rectangle.compress.vertical")
+                }
+                .help(compact ? "Show the full view" : "Show a compact view")
                 if server.status.isActive {
                     Button("Stop") { server.stop() }.disabled(server.status == .stopping)
                 } else {
@@ -184,7 +205,7 @@ private struct ServingSections: View {
                 ("Cached", Format.tokens(engine.kvPagesCached * block)),
                 ("Free", Format.tokens(engine.kvPagesFree * block)),
                 ("Capacity", Format.tokens(engine.kvPagesTotal * block)),
-            ])
+            ], colors: ["In use": .orange, "Cached": .purple])
             SeriesChart(series: [("In use", .orange, stats.kvActiveTokens),
                                  ("Cached", .purple, stats.kvCachedTokens)],
                         valueLabel: { Format.tokens($0) }, stacked: true, minimumTop: 4000)
@@ -196,7 +217,7 @@ private struct ServingSections: View {
                 ("Queued", String(format: "%.0f", engine.queued)),
                 ("Completed", String(format: "%.0f", engine.requestsCompleted)),
                 ("Failed", String(format: "%.0f", engine.requestsFailed)),
-            ])
+            ], colors: ["Active": .green, "Queued": .red])
             SeriesChart(series: [("Active", .green, stats.activeRequests),
                                  ("Queued", .red, stats.queuedRequests)],
                         valueLabel: { String(format: "%.0f", $0) }, height: 60, minimumTop: 4)
@@ -216,7 +237,7 @@ private struct ServingSections: View {
                 ("Limit", Format.gigabytes(engine.memoryLimitBytes)),
                 ("Headroom", Format.gigabytes(engine.memoryHeadroomBytes)),
                 ("Pressure", engine.memoryPressure ?? "–"),
-            ])
+            ], colors: ["Used": .indigo])
             SeriesChart(series: [("Used", .indigo, stats.engineMemoryUsed)],
                         valueLabel: { Format.axisGigabytes($0) }, height: 60,
                         yMaximum: engine.memoryLimitBytes)
@@ -234,14 +255,14 @@ private struct SystemSections: View {
                     ("CPU", Format.percent(system.cpuUsage)),
                     ("GPU", Format.percent(system.gpuUsage)),
                     ("Pressure", system.memoryPressure),
-                ])
+                ], colors: ["CPU": .blue, "GPU": .pink])
                 SeriesChart(series: [("CPU %", .blue, stats.cpuUsage), ("GPU %", .pink, stats.gpuUsage)],
                             valueLabel: { String(format: "%.0f%%", $0) }, height: 70, yMaximum: 100)
                 Figures([
                     ("Memory used", "\(Format.gigabytes(system.memoryUsedBytes)) of \(Format.gigabytes(system.memoryTotalBytes))"),
                     ("Wired", Format.gigabytes(system.memoryWiredBytes)),
                     ("Swap", Format.gigabytes(system.swapUsedBytes)),
-                ])
+                ], colors: ["Memory used": .indigo, "Swap": .red])
                 SeriesChart(series: [("Memory", .indigo, stats.systemMemoryUsed), ("Swap", .red, stats.swapUsed)],
                             valueLabel: { Format.axisGigabytes($0) }, height: 70,
                             yMaximum: system.memoryTotalBytes)
@@ -255,13 +276,14 @@ private struct SystemSections: View {
 private struct Section<Content: View>: View {
     let title: String
     @ViewBuilder let content: Content
+    @Environment(\.compactStats) private var compact
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: compact ? 4 : 8) {
             Text(title.uppercased()).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
             content
         }
-        .padding(12)
+        .padding(compact ? 8 : 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 10).fill(Color(nsColor: .controlBackgroundColor)))
     }
@@ -271,6 +293,8 @@ private struct Figures: View {
     let items: [(String, String)]
     /// A dot after the label, keyed by label, matching that value's chart line.
     let colors: [String: Color]
+
+    @Environment(\.compactStats) private var compact
 
     init(_ items: [(String, String)], colors: [String: Color] = [:]) {
         self.items = items
@@ -287,7 +311,8 @@ private struct Figures: View {
                             Circle().fill(color).frame(width: 6, height: 6)
                         }
                     }
-                    Text(items[index].1).font(.system(.callout, design: .rounded).monospacedDigit())
+                    Text(items[index].1)
+                        .font(.system(compact ? .caption : .callout, design: .rounded).monospacedDigit())
                 }
             }
             Spacer(minLength: 0)
@@ -313,6 +338,8 @@ private struct SeriesChart: View {
     var yMaximum: Double?
     /// The smallest top for the y axis, so an idle chart still has sensible labels.
     var minimumTop: Double = 1
+
+    @Environment(\.compactStats) private var compact
 
     /// Fits the widest axis label ("100%", "4.0K", "47G"); values switch to K, M and G.
     static let axisLabelWidth: CGFloat = 34
@@ -356,7 +383,7 @@ private struct SeriesChart: View {
             }
         }
         .chartYAxis {
-            AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { value in
+            AxisMarks(position: .trailing, values: .automatic(desiredCount: compact ? 2 : 3)) { value in
                 AxisGridLine()
                 AxisValueLabel {
                     // One fixed width for every chart, so their plot areas line up.
@@ -369,8 +396,9 @@ private struct SeriesChart: View {
                 }
             }
         }
-        .chartLegend(series.count > 1 ? .visible : .hidden)
-        .frame(height: height)
+        // Compact: the figures' color dots identify the series instead of a legend.
+        .chartLegend(series.count > 1 && !compact ? .visible : .hidden)
+        .frame(height: compact ? max(32, height * 0.5) : height)
     }
 
     private func yDomainMaximum(for points: [Point]) -> Double {

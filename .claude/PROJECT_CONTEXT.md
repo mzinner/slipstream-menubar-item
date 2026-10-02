@@ -74,6 +74,20 @@ MIT); first release v26.10.0.
     is `build/runtime/serve.lock`.
   - Refresh reads **all** candidate locks, so a server from either kind is found.
   - With nothing installed, the menu shows **Install Slipstream…** instead of Start.
+- **Model picker** (`ModelPicker.swift`; Settings → Model `ModelChoice`): the menu's "Download
+  Model…" opens it first, as the user asked.
+  - **Catalog:** **only Qwen3.8-Flash-Next** (Swift + base). The engine loads only
+    `splash-packed-q4-qwen4exp` (`runtime/model/ModelDescriptor.mm:324`). The
+    `incoai/Qwen3.8-27B-Splash` / `Qwen3.6-35B-A3B-Splash` packages in the launcher's
+    `official-models.txt` and `PACKAGE_FORMATS` (from Splash 1.0) downloaded fine (17.4 / 20.9
+    GB, ~3 min each) but fail with `unsupported weight format: splash-packed-q4[-moe]`. Tested;
+    don't re-add them.
+  - **New Model…** (`ModelCheck`): Hub tree → package (manifest format/schema must be
+    qwen4exp/5) or GGUF (first shard header via a 256 KB `Range` request → `GGUFHeader`
+    `general.architecture` must be `qwen4exp`; adds the shared MTP head if the repo lacks one).
+    Saved to `config.customModels`. Verified against real repos: qwen2 GGUF and safetensors-only
+    are rejected; a missing repo returns 401.
+  - `--download <repo>` dev aid starts a catalog model's download.
 - **Model download** (`ModelSetup.swift`, `ModelDownloader`, `ModelWindow`): "Download Model…"
   shows while `config.model` is missing (`ModelPresence`).
   - **Model:** `ModelSpec.swiftQwen38FlashNext`, the user's choice and the README's command:

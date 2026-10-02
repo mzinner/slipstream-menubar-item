@@ -46,11 +46,13 @@ Settings → Server → Run can switch to a source checkout instead.
 |---|---|---|
 | Swift-Qwen3.8-Flash-Next V3 (GGUF, plus the shared MTP draft head) | 104.5 GB | 64 GB Mac |
 | Qwen3.8-Flash-Next V3 (GGUF) | 104.5 GB | 64 GB Mac |
-| Qwen3.8-27B (ready-to-run package) | 17.4 GB | 36 GB, 48 GB recommended |
-| Qwen3.6-35B-A3B (ready-to-run package) | 20.9 GB | 36 GB, 48 GB recommended |
+
+The Slipstream v2 engine loads only Qwen3.8-Flash-Next. The `incoai/Qwen3.8-27B-Splash` and
+`Qwen3.6-35B-A3B-Splash` packages its launcher still lists, from Splash 1.0, fail with "unsupported
+weight format".
 
 **New Model…** takes any Hugging Face id and checks it first: a ready-to-run Slipstream package
-in a format the installed launcher reads, or GGUF files of the `qwen4exp` architecture (read from
+in the format the engine loads (`splash-packed-q4-qwen4exp`), or GGUF files of the `qwen4exp` architecture (read from
 the first shard's header, without downloading it). Downloads use Hugging Face's `hf`, installed
 with Homebrew when missing, and show progress, speed and time left; at least 10 GB must stay free
 afterwards. GGUF models are converted on their first start, which the panel shows as a progress bar.

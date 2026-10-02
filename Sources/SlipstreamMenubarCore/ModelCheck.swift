@@ -3,11 +3,10 @@ import Foundation
 /// Decides whether a Hugging Face repository is something this Slipstream can serve,
 /// from its file listing, its manifest and the header of its first GGUF shard.
 public enum ModelCheck {
-    /// Package formats the launcher accepts, with the manifest schema each must declare
-    /// (install/models.py PACKAGE_FORMATS).
+    /// Package formats the engine loads, with the manifest schema each must declare. The
+    /// launcher's PACKAGE_FORMATS also lists Splash 1.0's `splash-packed-q4` (schema 3) and
+    /// `splash-packed-q4-moe` (4), but the engine rejects them (ModelDescriptor.mm).
     public static let packageFormats: [String: Int] = [
-        "splash-packed-q4": 3,
-        "splash-packed-q4-moe": 4,
         "splash-packed-q4-qwen4exp": 5,
     ]
     /// The only GGUF architecture the converter turns into a package.
@@ -45,7 +44,8 @@ public enum ModelCheck {
         }
         let format = (manifest["format"] as? [String: Any])?["name"] as? String
         guard let format, let schema = packageFormats[format] else {
-            return "its package format \(format.map { "“\($0)”" } ?? "(none)") is not one Slipstream reads"
+            return "its package format \(format.map { "“\($0)”" } ?? "(none)") is not one the Slipstream engine loads "
+                + "(only Qwen3.8-Flash-Next packages, splash-packed-q4-qwen4exp)"
         }
         guard manifest["schema_version"] as? Int == schema else {
             return "its manifest schema is not the one the \(format) format needs (\(schema))"
@@ -68,9 +68,8 @@ public enum ModelCheck {
         let folder = "~/models/" + name.lowercased()
         switch layout {
         case .package:
-            // The official packages ask for 36 GB, 48 GB recommended; assume the same.
-            return ModelSpec(repository: repository, folder: folder, title: name, kind: .package,
-                             minimumMemoryGiB: 36, recommendedMemoryGiB: 48)
+            // The only package format the engine loads is Qwen3.8-Flash-Next's.
+            return ModelSpec(repository: repository, folder: folder, title: name, kind: .package)
         case .gguf(_, let hasMTP):
             return ModelSpec(repository: repository, folder: folder, title: name,
                              extraFiles: hasMTP ? [] : [ModelSpec.mtpDraftHead], kind: .gguf)

@@ -556,13 +556,13 @@ final class ModelCatalogTests: XCTestCase {
     func testTheCatalog() {
         XCTAssertEqual(ModelSpec.catalog.map(\.repository), [
             "nitinpanj/Swift-Qwen3.8-Flash-Next-Q4_0-Q8out-v3-GGUF", "nitinpanj/qwen38-flash-next-v3",
-            "incoai/Qwen3.8-27B-Splash", "incoai/Qwen3.6-35B-A3B-Splash",
-        ])
-        XCTAssertEqual(ModelSpec.qwen38_27B.kind, .package)
-        XCTAssertEqual(ModelSpec.qwen38_27B.memoryNote, "36 GB Mac, 48 GB recommended")
+        ], "the engine loads only Qwen3.8-Flash-Next")
         XCTAssertEqual(ModelSpec.qwen38FlashNext.memoryNote, "64 GB Mac")
+        XCTAssertEqual(ModelSpec(repository: "a/b", folder: "~/m", title: "b", minimumMemoryGiB: 36,
+                                 recommendedMemoryGiB: 48).memoryNote, "36 GB Mac, 48 GB recommended")
         XCTAssertTrue(ModelSpec.qwen38FlashNext.extraFiles.isEmpty, "the base model ships its MTP head")
-        XCTAssertEqual(ModelSpec.matching(path: "~/models/qwen38-27b-splash", in: ModelSpec.catalog)?.title, "Qwen3.8-27B")
+        XCTAssertEqual(ModelSpec.matching(path: "~/models/qwen38-flash-next-v3", in: ModelSpec.catalog)?.title,
+                       "Qwen3.8-Flash-Next V3")
         XCTAssertNil(ModelSpec.matching(path: "/elsewhere", in: ModelSpec.catalog))
     }
 
@@ -579,10 +579,12 @@ final class ModelCatalogTests: XCTestCase {
     }
 
     func testManifestFormats() {
-        XCTAssertNil(ModelCheck.problem(withManifest: Data(#"{"schema_version":3,"format":{"name":"splash-packed-q4"}}"#.utf8)))
-        XCTAssertNil(ModelCheck.problem(withManifest: Data(#"{"schema_version":4,"format":{"name":"splash-packed-q4-moe"}}"#.utf8)))
+        XCTAssertNil(ModelCheck.problem(withManifest: Data(#"{"schema_version":5,"format":{"name":"splash-packed-q4-qwen4exp"}}"#.utf8)))
+        // Splash 1.0 formats the launcher lists but the engine rejects ("unsupported weight format").
+        XCTAssertNotNil(ModelCheck.problem(withManifest: Data(#"{"schema_version":3,"format":{"name":"splash-packed-q4"}}"#.utf8)))
+        XCTAssertNotNil(ModelCheck.problem(withManifest: Data(#"{"schema_version":4,"format":{"name":"splash-packed-q4-moe"}}"#.utf8)))
         XCTAssertNotNil(ModelCheck.problem(withManifest: Data(#"{"schema_version":3,"format":{"name":"mlx"}}"#.utf8)))
-        XCTAssertNotNil(ModelCheck.problem(withManifest: Data(#"{"schema_version":5,"format":{"name":"splash-packed-q4"}}"#.utf8)))
+        XCTAssertNotNil(ModelCheck.problem(withManifest: Data(#"{"schema_version":4,"format":{"name":"splash-packed-q4-qwen4exp"}}"#.utf8)))
         XCTAssertNotNil(ModelCheck.problem(withManifest: Data("not json".utf8)))
     }
 
@@ -613,7 +615,7 @@ final class ModelCatalogTests: XCTestCase {
         let package = ModelCheck.spec(repository: "someone/Thing-Splash", layout: .package)
         XCTAssertEqual(package?.kind, .package)
         XCTAssertEqual(package?.folder, "~/models/thing-splash")
-        XCTAssertEqual(package?.minimumMemoryGiB, 36)
+        XCTAssertEqual(package?.minimumMemoryGiB, 64, "the only loadable package is Flash-Next")
         let gguf = ModelCheck.spec(repository: "someone/Flash-GGUF", layout: .gguf(firstShard: "a.gguf", hasMTP: false))
         XCTAssertEqual(gguf?.extraFiles, [ModelSpec.mtpDraftHead], "a GGUF without its own MTP head gets the shared one")
         XCTAssertEqual(gguf?.minimumMemoryGiB, 64)
@@ -623,7 +625,7 @@ final class ModelCatalogTests: XCTestCase {
         var config = ServerConfig()
         config.customModels = [ModelSpec(repository: "someone/Thing-Splash", folder: "~/models/thing", title: "Thing",
                                          kind: .package, minimumMemoryGiB: 36, recommendedMemoryGiB: 48),
-                               ModelSpec.qwen38_27B]
+                               ModelSpec.qwen38FlashNext]
         let decoded = try JSONDecoder().decode(ServerConfig.self, from: JSONEncoder().encode(config))
         XCTAssertEqual(decoded.customModels.first?.repository, "someone/Thing-Splash")
         XCTAssertEqual(decoded.availableModels.count, ModelSpec.catalog.count + 1, "a catalog model is not repeated")

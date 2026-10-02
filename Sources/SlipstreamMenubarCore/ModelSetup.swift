@@ -50,17 +50,11 @@ public struct ModelSpec: Codable, Equatable, Sendable {
         folder: "~/models/qwen38-flash-next-v3",
         title: "Qwen3.8-Flash-Next V3")
 
-    /// Slipstream's official ready-to-run packages (install/completions/official-models.txt).
-    /// Their model cards ask for 36 GB, 48 GB or more recommended.
-    public static let qwen38_27B = ModelSpec(
-        repository: "incoai/Qwen3.8-27B-Splash", folder: "~/models/qwen38-27b-splash",
-        title: "Qwen3.8-27B", kind: .package, minimumMemoryGiB: 36, recommendedMemoryGiB: 48)
-    public static let qwen36_35B_A3B = ModelSpec(
-        repository: "incoai/Qwen3.6-35B-A3B-Splash", folder: "~/models/qwen36-35b-a3b-splash",
-        title: "Qwen3.6-35B-A3B", kind: .package, minimumMemoryGiB: 36, recommendedMemoryGiB: 48)
-
-    /// The models the app offers in Settings, largest first.
-    public static let catalog: [ModelSpec] = [swiftQwen38FlashNext, qwen38FlashNext, qwen38_27B, qwen36_35B_A3B]
+    /// The models the app offers. The Slipstream v2 engine loads only Qwen3.8-Flash-Next
+    /// (`splash-packed-q4-qwen4exp`, runtime/model/ModelDescriptor.mm): the
+    /// incoai/Qwen3.8-27B-Splash and Qwen3.6-35B-A3B-Splash packages that its launcher still
+    /// lists (inherited from Splash 1.0) fail with "unsupported weight format".
+    public static let catalog: [ModelSpec] = [swiftQwen38FlashNext, qwen38FlashNext]
 
     /// The catalog or custom model whose folder is `path`, if any.
     public static func matching(path: String, in models: [ModelSpec]) -> ModelSpec? {

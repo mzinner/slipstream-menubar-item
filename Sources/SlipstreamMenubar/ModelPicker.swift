@@ -96,8 +96,10 @@ struct ModelPickerView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Choose a model to download").font(.headline)
-            Text("This Mac has \(MachineCheck.memoryGiB) GB of memory.")
-                .font(.callout).foregroundStyle(.secondary)
+            Text("This Mac has \(MachineCheck.memoryGiB) GB of memory. Slipstream runs Qwen3.8-Flash-Next "
+                 + "models, which need a 64 GB Mac.")
+                .font(.callout).foregroundStyle(MachineCheck.hasEnoughMemory ? Color.secondary : Color.orange)
+                .fixedSize(horizontal: false, vertical: true)
 
             VStack(spacing: 0) {
                 ForEach(picker.models, id: \.repository) { model in
@@ -118,7 +120,7 @@ struct ModelPickerView: View {
                     }
                     switch picker.newModelState {
                     case .idle:
-                        Text("A ready-to-run Slipstream package, or Qwen3.8-Flash-Next GGUF files.")
+                        Text("Qwen3.8-Flash-Next only: GGUF files, or a ready-to-run Slipstream package.")
                             .font(.caption).foregroundStyle(.secondary)
                     case .checking:
                         ProgressView().controlSize(.small)

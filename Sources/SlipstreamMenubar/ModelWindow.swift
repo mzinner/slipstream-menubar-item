@@ -188,8 +188,9 @@ final class ModelWindowController: NSObject, NSWindowDelegate {
         } else {
             let answer = ask("\(model.title) is downloaded",
                              "This Mac has \(MachineCheck.memoryGiB) GB of memory, and the model needs a "
-                             + "\(model.memoryNote). Open Settings to choose a smaller model, and adjust Max "
-                             + "memory and Max context, before starting the server.",
+                             + "\(model.memoryNote). Slipstream runs only Qwen3.8-Flash-Next models, which all "
+                             + "need that much, so the server is not expected to start here. Settings has Max "
+                             + "memory and Max context if you want to try anyway.",
                              buttons: ["Open Settings", "Close"], style: .warning)
             window?.close()
             if answer == .alertFirstButtonReturn { openSettings() }

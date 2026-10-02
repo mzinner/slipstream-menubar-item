@@ -4,9 +4,17 @@ import Foundation
 /// The model "Download Model…" installs: the Swift variant from Slipstream's README,
 /// `hf download nitinpanj/Swift-Qwen3.8-Flash-Next-Q4_0-Q8out-v3-GGUF --local-dir
 /// ~/models/swift-qwen38-flash-next-v3`.
-public struct ModelSpec: Equatable, Sendable {
+public struct ModelSpec: Codable, Equatable, Sendable {
+    /// What the download is, which decides how the server gets it ready.
+    public enum Kind: String, Codable, Sendable {
+        /// GGUF shards of Qwen3.8-Flash-Next (`qwen4exp`): converted into `prepared/` on first start.
+        case gguf
+        /// A ready-to-run Slipstream package (`manifest.json` and packed weights).
+        case package
+    }
+
     /// A single file from another repository, downloaded into the model's folder.
-    public struct ExtraFile: Equatable, Sendable {
+    public struct ExtraFile: Codable, Equatable, Sendable {
         public var repository: String
         public var path: String
 
@@ -19,6 +27,11 @@ public struct ModelSpec: Equatable, Sendable {
     public var folder: String
     public var title: String
     public var extraFiles: [ExtraFile] = []
+    public var kind: Kind = .gguf
+    /// Below this the server is not expected to start.
+    public var minimumMemoryGiB: Int = 64
+    /// What the model's authors recommend.
+    public var recommendedMemoryGiB: Int = 64
 
     /// The MTP draft head (speculative decoding) is only in the base model's repository;
     /// the converter looks for it in the model's own `MTP/` folder.
@@ -30,6 +43,48 @@ public struct ModelSpec: Equatable, Sendable {
         folder: "~/models/swift-qwen38-flash-next-v3",
         title: "Swift-Qwen3.8-Flash-Next V3",
         extraFiles: [mtpDraftHead])
+
+    /// The README's alternative: the dense base model, which ships its MTP head.
+    public static let qwen38FlashNext = ModelSpec(
+        repository: "nitinpanj/qwen38-flash-next-v3",
+        folder: "~/models/qwen38-flash-next-v3",
+        title: "Qwen3.8-Flash-Next V3")
+
+    /// Slipstream's official ready-to-run packages (install/completions/official-models.txt).
+    /// Their model cards ask for 36 GB, 48 GB or more recommended.
+    public static let qwen38_27B = ModelSpec(
+        repository: "incoai/Qwen3.8-27B-Splash", folder: "~/models/qwen38-27b-splash",
+        title: "Qwen3.8-27B", kind: .package, minimumMemoryGiB: 36, recommendedMemoryGiB: 48)
+    public static let qwen36_35B_A3B = ModelSpec(
+        repository: "incoai/Qwen3.6-35B-A3B-Splash", folder: "~/models/qwen36-35b-a3b-splash",
+        title: "Qwen3.6-35B-A3B", kind: .package, minimumMemoryGiB: 36, recommendedMemoryGiB: 48)
+
+    /// The models the app offers in Settings, largest first.
+    public static let catalog: [ModelSpec] = [swiftQwen38FlashNext, qwen38FlashNext, qwen38_27B, qwen36_35B_A3B]
+
+    /// The catalog or custom model whose folder is `path`, if any.
+    public static func matching(path: String, in models: [ModelSpec]) -> ModelSpec? {
+        let target = (path as NSString).expandingTildeInPath
+        return models.first { $0.folderURL.path == target }
+    }
+
+    public init(repository: String, folder: String, title: String, extraFiles: [ExtraFile] = [],
+                kind: Kind = .gguf, minimumMemoryGiB: Int = 64, recommendedMemoryGiB: Int = 64) {
+        self.repository = repository
+        self.folder = folder
+        self.title = title
+        self.extraFiles = extraFiles
+        self.kind = kind
+        self.minimumMemoryGiB = minimumMemoryGiB
+        self.recommendedMemoryGiB = recommendedMemoryGiB
+    }
+
+    /// "Qwen3.8-27B (17.4 GB download, 36 GB Mac, 48 GB recommended)" style summary of needs.
+    public var memoryNote: String {
+        minimumMemoryGiB == recommendedMemoryGiB
+            ? "\(minimumMemoryGiB) GB Mac"
+            : "\(minimumMemoryGiB) GB Mac, \(recommendedMemoryGiB) GB recommended"
+    }
 
     /// `SLIPSTREAM_MENUBAR_MODEL_REPO` / `_MODEL_DIR` swap in a small repository to test
     /// the download flow without fetching 100 GB.
@@ -216,11 +271,13 @@ public enum DiskCheck {
         case noRoomToPrepare(shortBy: Int64)
     }
 
-    /// `downloaded` is what an earlier, stopped download already left on disk.
-    public static func evaluate(total: Int64, downloaded: Int64, free: Int64) -> Verdict {
+    /// `downloaded` is what an earlier, stopped download already left on disk; `prepares`
+    /// says whether the first start writes a prepared copy (GGUF models do, packages don't).
+    public static func evaluate(total: Int64, downloaded: Int64, free: Int64, prepares: Bool = true) -> Verdict {
         let remaining = max(0, total - downloaded)
         let afterDownload = free - remaining
         if afterDownload < reserveBytes { return .insufficient(shortBy: reserveBytes - afterDownload) }
+        guard prepares else { return .ok }
         let afterPreparing = afterDownload - total
         if afterPreparing < reserveBytes { return .noRoomToPrepare(shortBy: reserveBytes - afterPreparing) }
         return .ok

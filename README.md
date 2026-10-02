@@ -38,6 +38,25 @@ curl -fsSL https://github.com/mzinner/slipstream/raw/main/install.sh | sh
 
 Settings → Server → Run can switch to a source checkout instead.
 
+## Models
+
+**Download Model…** in the menu, and Settings → Model, offer the supported models:
+
+| Model | Download | Memory |
+|---|---|---|
+| Swift-Qwen3.8-Flash-Next V3 (GGUF, plus the shared MTP draft head) | 104.5 GB | 64 GB Mac |
+| Qwen3.8-Flash-Next V3 (GGUF) | 104.5 GB | 64 GB Mac |
+| Qwen3.8-27B (ready-to-run package) | 17.4 GB | 36 GB, 48 GB recommended |
+| Qwen3.6-35B-A3B (ready-to-run package) | 20.9 GB | 36 GB, 48 GB recommended |
+
+**New Model…** takes any Hugging Face id and checks it first: a ready-to-run Slipstream package
+in a format the installed launcher reads, or GGUF files of the `qwen4exp` architecture (read from
+the first shard's header, without downloading it). Downloads use Hugging Face's `hf`, installed
+with Homebrew when missing, and show progress, speed and time left; at least 10 GB must stay free
+afterwards. GGUF models are converted on their first start, which the panel shows as a progress bar.
+On a 64 GB Mac the app raises `iogpu.wired_limit_mb` (Settings → Memory, default 59392) before
+each start.
+
 ## Requirements
 
 - macOS 15 or later on Apple Silicon (the Slipstream engine itself needs 26.4)

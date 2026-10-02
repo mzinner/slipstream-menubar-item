@@ -2,38 +2,71 @@ import AppKit
 import SlipstreamMenubarCore
 import SwiftUI
 
-/// "Download Model…": the checks and questions around the download, and its window.
+/// "Download Model…": a picker of the supported models (or a new one by its Hugging Face
+/// id), then the checks and questions around the download, and its progress.
 @MainActor
 final class ModelWindowController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
     private var downloader: ModelDownloader?
+    private var picker: ModelPicker?
     private let searchPath: () -> [String]
-    /// Called with the downloaded folder, which becomes the configured model.
-    private let onDownloaded: (URL) -> Void
+    /// The catalog plus models added with New Model…
+    private let models: () -> [ModelSpec]
+    private let addModel: (ModelSpec) -> Void
+    /// Called with the downloaded model, which becomes the configured one.
+    private let onDownloaded: (ModelSpec) -> Void
     private let startServer: () -> Void
     private let openSettings: () -> Void
 
-    init(searchPath: @escaping () -> [String], onDownloaded: @escaping (URL) -> Void,
+    init(searchPath: @escaping () -> [String], models: @escaping () -> [ModelSpec],
+         addModel: @escaping (ModelSpec) -> Void, onDownloaded: @escaping (ModelSpec) -> Void,
          startServer: @escaping () -> Void, openSettings: @escaping () -> Void) {
         self.searchPath = searchPath
+        self.models = models
+        self.addModel = addModel
         self.onDownloaded = onDownloaded
         self.startServer = startServer
         self.openSettings = openSettings
     }
 
-    func show() {
+    /// The picker, or the running download if there is one.
+    func show(newModel: Bool = false) {
         if let downloader, downloader.phase.isRunning {
             present(downloader)
             return
         }
-        let model = ModelSpec.default
-        // 1. Memory: the model needs a 64 GB Mac.
-        if !MachineCheck.hasEnoughMemory {
+        let picker = ModelPicker(models: models(), newModelOpen: newModel)
+        self.picker = picker
+        let view = ModelPickerView(picker: picker,
+                                   choose: { [weak self] model in self?.begin(model) },
+                                   add: { [weak self] model in self?.addModel(model) },
+                                   close: { [weak self] in self?.window?.close() })
+        host(AnyView(view), title: "Download Model", height: 420)
+        picker.loadSizes()
+    }
+
+    /// Straight to the download of one model, e.g. from Settings.
+    func show(model: ModelSpec) {
+        if let downloader, downloader.phase.isRunning {
+            present(downloader)
+            return
+        }
+        begin(model)
+    }
+
+    private func begin(_ model: ModelSpec) {
+        // 1. Memory: what the model needs.
+        if MachineCheck.memoryGiB < model.minimumMemoryGiB {
             let answer = ask("This Mac has \(MachineCheck.memoryGiB) GB of memory",
-                             "\(model.title) needs a Mac with at least \(MachineCheck.requiredMemoryGiB) GB "
-                             + "of memory to run. You can still download it, but the server is not "
-                             + "expected to start on this Mac.",
+                             "\(model.title) needs a \(model.memoryNote). You can still download it, but "
+                             + "the server is not expected to start on this Mac.",
                              buttons: ["Download Anyway", "Cancel"], style: .warning)
+            guard answer == .alertFirstButtonReturn else { return }
+        } else if MachineCheck.memoryGiB < model.recommendedMemoryGiB {
+            let answer = ask("Less memory than recommended",
+                             "\(model.title) recommends \(model.recommendedMemoryGiB) GB; this Mac has "
+                             + "\(MachineCheck.memoryGiB) GB. It should run, with less room for long contexts.",
+                             buttons: ["Download", "Cancel"], style: .informational)
             guard answer == .alertFirstButtonReturn else { return }
         }
         // 2. hf, and Homebrew to install it.
@@ -53,15 +86,13 @@ final class ModelWindowController: NSObject, NSWindowDelegate {
                 return
             }
         }
-        // 3. Disk: the GGUF files, and about as much again for the package prepared on first serve.
+        // 3. Disk, then the download.
         let downloader = ModelDownloader(model: model, searchPath: paths)
         self.downloader = downloader
         present(downloader)
         Task { await self.checkDiskAndRun(downloader) }
     }
 
-    /// At least 10 GB must stay free once the download is done; room for the prepared
-    /// copy written on the first start is only advised.
     private func checkDiskAndRun(_ downloader: ModelDownloader) async {
         let model = downloader.model
         guard let total = try? await ModelDownloader.totalSize(of: model) else {
@@ -71,7 +102,8 @@ final class ModelWindowController: NSObject, NSWindowDelegate {
             return
         }
         let free = MachineCheck.freeDiskBytes(at: model.folderURL) ?? 0
-        switch DiskCheck.evaluate(total: total, downloaded: downloader.downloadedBytes, free: free) {
+        switch DiskCheck.evaluate(total: total, downloaded: downloader.downloadedBytes, free: free,
+                                  prepares: model.kind == .gguf) {
         case .ok:
             break
         case .insufficient(let shortBy):
@@ -100,15 +132,19 @@ final class ModelWindowController: NSObject, NSWindowDelegate {
     private func present(_ downloader: ModelDownloader) {
         let view = ModelDownloadView(downloader: downloader, abort: { [weak self] in self?.confirmAbort() },
                                      close: { [weak self] in self?.window?.close() })
+        host(AnyView(view), title: "Download Model", height: 230)
+    }
+
+    private func host(_ view: AnyView, title: String, height: CGFloat) {
         if window == nil {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 230),
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: height),
                                   styleMask: [.titled, .closable], backing: .buffered, defer: false)
-            window.title = "Download Model"
             window.isReleasedWhenClosed = false
             window.delegate = self
             window.center()
             self.window = window
         }
+        window?.title = title
         window?.contentView = NSHostingView(rootView: view)
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
@@ -139,19 +175,21 @@ final class ModelWindowController: NSObject, NSWindowDelegate {
     }
 
     private func finished(_ downloader: ModelDownloader) {
-        onDownloaded(downloader.model.folderURL)
-        if MachineCheck.hasEnoughMemory {
-            let answer = ask("\(downloader.model.title) is downloaded",
-                             "It is now the model in Settings. Start the server? The first start prepares "
-                             + "the model, which takes several minutes.",
+        let model = downloader.model
+        onDownloaded(model)
+        let prepares = model.kind == .gguf
+            ? " The first start prepares the model, which takes several minutes." : ""
+        if MachineCheck.memoryGiB >= model.minimumMemoryGiB {
+            let answer = ask("\(model.title) is downloaded",
+                             "It is now the model in Settings. Start the server?\(prepares)",
                              buttons: ["Start Server", "Later"], style: .informational)
             window?.close()
             if answer == .alertFirstButtonReturn { startServer() }
         } else {
-            let answer = ask("\(downloader.model.title) is downloaded",
-                             "This Mac has \(MachineCheck.memoryGiB) GB of memory, and the model needs "
-                             + "\(MachineCheck.requiredMemoryGiB) GB. Open Settings to choose a smaller model "
-                             + "and adjust Max memory and Max context before starting the server.",
+            let answer = ask("\(model.title) is downloaded",
+                             "This Mac has \(MachineCheck.memoryGiB) GB of memory, and the model needs a "
+                             + "\(model.memoryNote). Open Settings to choose a smaller model, and adjust Max "
+                             + "memory and Max context, before starting the server.",
                              buttons: ["Open Settings", "Close"], style: .warning)
             window?.close()
             if answer == .alertFirstButtonReturn { openSettings() }

@@ -10,10 +10,11 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     private let server: ServerController
     private let save: (ServerConfig, String?, _ restart: Bool) -> Void
     private let install: () -> Void
-    private let downloadModel: () -> Void
+    private let downloadModel: (ModelSpec?) -> Void
 
+    /// `downloadModel(nil)` opens the download window at New Model…
     init(server: ServerController, save: @escaping (ServerConfig, String?, Bool) -> Void,
-         install: @escaping () -> Void, downloadModel: @escaping () -> Void) {
+         install: @escaping () -> Void, downloadModel: @escaping (ModelSpec?) -> Void) {
         self.server = server
         self.save = save
         self.install = install
@@ -56,7 +57,7 @@ private struct SettingsView: View {
     /// window is open.
     @ObservedObject var server: ServerController
     let install: () -> Void
-    let downloadModel: () -> Void
+    let downloadModel: (ModelSpec?) -> Void
     let onSave: (ServerConfig, String, Bool) -> Void
     let onCancel: () -> Void
 
@@ -68,7 +69,7 @@ private struct SettingsView: View {
 
     init(config: ServerConfig, apiKey: String, serverActive: Bool,
          server: ServerController, install: @escaping () -> Void,
-         downloadModel: @escaping () -> Void,
+         downloadModel: @escaping (ModelSpec?) -> Void,
          onSave: @escaping (ServerConfig, String, Bool) -> Void, onCancel: @escaping () -> Void) {
         _config = State(initialValue: config)
         _apiKey = State(initialValue: apiKey)
@@ -107,15 +108,8 @@ private struct SettingsView: View {
                     } else {
                         InstalledRelease(installation: installation, install: install)
                     }
-                    PathField(label: "Model", path: $config.model, directoriesOnly: true,
-                              help: "A folder with GGUF shards or a prepared package, or a Hub repo id")
-                    if !ModelPresence.isAvailable(config.model) {
-                        HStack {
-                            Text("No model at this location.").font(.caption).foregroundStyle(.secondary)
-                            Spacer()
-                            Button("Download \(ModelSpec.default.title)…", action: downloadModel)
-                        }
-                    }
+                    ModelChoice(model: $config.model, models: server.config.availableModels,
+                                download: downloadModel)
                     TextField("Port", text: $port)
                     TextField("Max context", text: $config.maxContext, prompt: Text("auto, e.g. 100K"))
                     TextField("Max memory", text: $config.maxMemory, prompt: Text("auto, e.g. 48G"))
@@ -293,6 +287,76 @@ private struct InstalledRelease: View {
                     .foregroundStyle(.secondary)
                 Spacer()
                 Button("Install…", action: install)
+            }
+        }
+    }
+}
+
+/// The model picker: the supported models and those added with New Model…, a custom
+/// folder or Hub id, or New Model… to add one.
+private struct ModelChoice: View {
+    @Binding var model: String
+    let models: [ModelSpec]
+    let download: (ModelSpec?) -> Void
+
+    private enum Choice: Hashable {
+        case model(String)  // repository
+        case custom
+        case new
+    }
+
+    @State private var customOpen = false
+
+    private var selection: Binding<Choice> {
+        Binding(
+            get: {
+                if customOpen { return .custom }
+                return ModelSpec.matching(path: model, in: models).map { .model($0.repository) } ?? .custom
+            },
+            set: { choice in
+                switch choice {
+                case .model(let repository):
+                    customOpen = false
+                    if let spec = models.first(where: { $0.repository == repository }) { model = spec.folder }
+                case .custom:
+                    customOpen = true
+                case .new:
+                    download(nil)
+                }
+            })
+    }
+
+    var body: some View {
+        let current = ModelSpec.matching(path: model, in: models)
+        Picker("Model", selection: selection) {
+            ForEach(models, id: \.repository) { spec in
+                Text("\(spec.title) (\(spec.memoryNote))").tag(Choice.model(spec.repository))
+            }
+            Divider()
+            Text("Custom folder or Hub id").tag(Choice.custom)
+            Text("New Model…").tag(Choice.new)
+        }
+        if let current, !customOpen {
+            HStack {
+                Text(current.folder).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                Spacer()
+                if ModelPresence.isAvailable(current.folder) {
+                    Label("Downloaded", systemImage: "checkmark").font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Text("Not downloaded").font(.caption).foregroundStyle(.orange)
+                    Button("Download…") { download(current) }
+                }
+            }
+            if MachineCheck.memoryGiB < current.minimumMemoryGiB {
+                Text("This Mac has \(MachineCheck.memoryGiB) GB of memory; this model needs a \(current.memoryNote).")
+                    .font(.caption).foregroundStyle(.orange)
+            }
+        } else {
+            PathField(label: "Folder or Hub id", path: $model, directoriesOnly: true,
+                      help: "A folder with GGUF files or a Slipstream package, or the Hugging Face id of a "
+                          + "ready-to-run Slipstream package, which the server downloads on its first start")
+            if !ModelPresence.isAvailable(model) {
+                Text("No model at this location.").font(.caption).foregroundStyle(.orange)
             }
         }
     }

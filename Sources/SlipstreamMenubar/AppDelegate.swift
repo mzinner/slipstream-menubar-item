@@ -26,14 +26,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             })
         modelWindow = ModelWindowController(
             searchPath: { [weak self] in self?.server.searchPath ?? [] },
-            onDownloaded: { [weak self] folder in self?.useDownloadedModel(folder) },
+            models: { [weak self] in self?.server.config.availableModels ?? ModelSpec.catalog },
+            addModel: { [weak self] model in self?.addCustomModel(model) },
+            onDownloaded: { [weak self] model in self?.useDownloadedModel(model) },
             startServer: { [weak self] in self?.start() },
             openSettings: { [weak self] in self?.settings.show() })
         settings = SettingsWindowController(
             server: server,
             save: { [weak self] config, key, restart in self?.apply(config, apiKey: key, restart: restart) },
             install: { [weak self] in self?.installer.show() },
-            downloadModel: { [weak self] in self?.modelWindow.show() })
+            downloadModel: { [weak self] model in
+                if let model { self?.modelWindow.show(model: model) } else { self?.modelWindow.show(newModel: true) }
+            })
         menu = MenuController(server: server, actions: .init(
             start: { [weak self] in self?.start() },
             stop: { [weak self] in self?.server.stop(); self?.menu.update() },
@@ -69,8 +73,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if CommandLine.arguments.contains("--show-panel") { panel.show() }
         // Development aid: opens the installer and starts the download at once.
         if CommandLine.arguments.contains("--install-latest") { installer.show(startImmediately: true) }
-        // Development aid: opens the model download at once.
+        // Development aids: the model picker, or one catalog model's download, at once.
         if CommandLine.arguments.contains("--download-model") { modelWindow.show() }
+        if let index = CommandLine.arguments.firstIndex(of: "--download"),
+           CommandLine.arguments.indices.contains(index + 1),
+           let model = server.config.availableModels.first(where: { $0.repository == CommandLine.arguments[index + 1] }) {
+            modelWindow.show(model: model)
+        }
         if let index = CommandLine.arguments.firstIndex(of: "--snapshot"),
            CommandLine.arguments.indices.contains(index + 1) {
             snapshot(to: URL(fileURLWithPath: CommandLine.arguments[index + 1]))
@@ -142,10 +151,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return alert.runModal() == .alertSecondButtonReturn
     }
 
-    /// A finished download becomes the configured model.
-    private func useDownloadedModel(_ folder: URL) {
+    /// A model added with New Model… is kept in the settings, next to the catalog.
+    private func addCustomModel(_ model: ModelSpec) {
         var config = server.config
-        config.model = (folder.path as NSString).abbreviatingWithTildeInPath
+        guard !config.availableModels.contains(where: { $0.repository == model.repository }) else { return }
+        config.customModels.append(model)
+        saveConfig(config)
+    }
+
+    private func saveConfig(_ config: ServerConfig) {
         do {
             try store.save(config)
         } catch {
@@ -153,6 +167,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         server.config = config
         menu.update()
+    }
+
+    /// A finished download becomes the configured model.
+    private func useDownloadedModel(_ model: ModelSpec) {
+        var config = server.config
+        config.model = model.folder
+        saveConfig(config)
     }
 
     private func apply(_ config: ServerConfig, apiKey: String?, restart: Bool) {

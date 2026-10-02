@@ -29,6 +29,8 @@ public struct ServerConfig: Codable, Equatable, Sendable {
     /// the server (asks for an administrator password; the value resets at boot).
     public var raiseGPULimit: Bool
     public var gpuWiredLimitMB: Int
+    /// Models added with "New Model…", offered next to the catalog.
+    public var customModels: [ModelSpec]
 
     public static let defaultReleaseRepository = "mzinner/slipstream"
 
@@ -45,7 +47,8 @@ public struct ServerConfig: Codable, Equatable, Sendable {
         listenOnNetwork: Bool = false,
         startServerOnLaunch: Bool = false,
         raiseGPULimit: Bool = true,
-        gpuWiredLimitMB: Int = GPUMemoryLimit.recommendedMB
+        gpuWiredLimitMB: Int = GPUMemoryLimit.recommendedMB,
+        customModels: [ModelSpec] = []
     ) {
         self.useCheckout = useCheckout
         self.repoPath = repoPath
@@ -60,6 +63,7 @@ public struct ServerConfig: Codable, Equatable, Sendable {
         self.startServerOnLaunch = startServerOnLaunch
         self.raiseGPULimit = raiseGPULimit
         self.gpuWiredLimitMB = gpuWiredLimitMB
+        self.customModels = customModels
     }
 
     /// Settings saved by an older version lack newer keys; those take their defaults.
@@ -82,6 +86,14 @@ public struct ServerConfig: Codable, Equatable, Sendable {
             ?? defaults.startServerOnLaunch
         raiseGPULimit = try container.decodeIfPresent(Bool.self, forKey: .raiseGPULimit) ?? defaults.raiseGPULimit
         gpuWiredLimitMB = try container.decodeIfPresent(Int.self, forKey: .gpuWiredLimitMB) ?? defaults.gpuWiredLimitMB
+        customModels = (try? container.decodeIfPresent([ModelSpec].self, forKey: .customModels)) ?? defaults.customModels
+    }
+
+    /// The catalog, then the models added with "New Model…" (not repeating any).
+    public var availableModels: [ModelSpec] {
+        ModelSpec.catalog + customModels.filter { custom in
+            !ModelSpec.catalog.contains { $0.repository == custom.repository }
+        }
     }
 
     /// The address `--host` gets.

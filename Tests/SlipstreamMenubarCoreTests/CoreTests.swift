@@ -551,3 +551,88 @@ final class RunningVersionTests: XCTestCase {
         XCTAssertEqual(SlipstreamInstallation.releaseVersion(ofRoot: root), "26.10.0")
     }
 }
+
+final class ModelCatalogTests: XCTestCase {
+    func testTheCatalog() {
+        XCTAssertEqual(ModelSpec.catalog.map(\.repository), [
+            "nitinpanj/Swift-Qwen3.8-Flash-Next-Q4_0-Q8out-v3-GGUF", "nitinpanj/qwen38-flash-next-v3",
+            "incoai/Qwen3.8-27B-Splash", "incoai/Qwen3.6-35B-A3B-Splash",
+        ])
+        XCTAssertEqual(ModelSpec.qwen38_27B.kind, .package)
+        XCTAssertEqual(ModelSpec.qwen38_27B.memoryNote, "36 GB Mac, 48 GB recommended")
+        XCTAssertEqual(ModelSpec.qwen38FlashNext.memoryNote, "64 GB Mac")
+        XCTAssertTrue(ModelSpec.qwen38FlashNext.extraFiles.isEmpty, "the base model ships its MTP head")
+        XCTAssertEqual(ModelSpec.matching(path: "~/models/qwen38-27b-splash", in: ModelSpec.catalog)?.title, "Qwen3.8-27B")
+        XCTAssertNil(ModelSpec.matching(path: "/elsewhere", in: ModelSpec.catalog))
+    }
+
+    func testRecognisesPackagesAndGGUFRepositories() {
+        let package = Data(#"[{"type":"file","path":"manifest.json","size":10},{"type":"file","path":"target/layer-0.bin","size":90}]"#.utf8)
+        XCTAssertEqual(ModelCheck.layout(ofTree: package).layout, .package)
+        XCTAssertEqual(ModelCheck.layout(ofTree: package).size, 100)
+        let gguf = Data(#"[{"type":"file","path":"m-00002-of-00002.gguf","size":5},{"type":"file","path":"m-00001-of-00002.gguf","size":5}]"#.utf8)
+        XCTAssertEqual(ModelCheck.layout(ofTree: gguf).layout, .gguf(firstShard: "m-00001-of-00002.gguf", hasMTP: false))
+        let withMTP = Data(#"[{"type":"file","path":"a.gguf","size":5},{"type":"file","path":"MTP/mtp-shared-Q4_K_M.gguf","size":1}]"#.utf8)
+        XCTAssertEqual(ModelCheck.layout(ofTree: withMTP).layout, .gguf(firstShard: "a.gguf", hasMTP: true))
+        if case .unsupported = ModelCheck.layout(ofTree: Data(#"[{"type":"file","path":"model.safetensors","size":5}]"#.utf8)).layout {
+        } else { XCTFail("safetensors-only repositories are not served") }
+    }
+
+    func testManifestFormats() {
+        XCTAssertNil(ModelCheck.problem(withManifest: Data(#"{"schema_version":3,"format":{"name":"splash-packed-q4"}}"#.utf8)))
+        XCTAssertNil(ModelCheck.problem(withManifest: Data(#"{"schema_version":4,"format":{"name":"splash-packed-q4-moe"}}"#.utf8)))
+        XCTAssertNotNil(ModelCheck.problem(withManifest: Data(#"{"schema_version":3,"format":{"name":"mlx"}}"#.utf8)))
+        XCTAssertNotNil(ModelCheck.problem(withManifest: Data(#"{"schema_version":5,"format":{"name":"splash-packed-q4"}}"#.utf8)))
+        XCTAssertNotNil(ModelCheck.problem(withManifest: Data("not json".utf8)))
+    }
+
+    func testGGUFArchitectureFromTheHeader() {
+        func header(_ kvs: [(String, UInt32, Data)]) -> Data {
+            var data = Data("GGUF".utf8)
+            func u32(_ v: UInt32) { withUnsafeBytes(of: v.littleEndian) { data.append(contentsOf: $0) } }
+            func u64(_ v: UInt64) { withUnsafeBytes(of: v.littleEndian) { data.append(contentsOf: $0) } }
+            func string(_ s: String) { u64(UInt64(s.utf8.count)); data.append(contentsOf: s.utf8) }
+            u32(3); u64(0); u64(UInt64(kvs.count))
+            for (key, type, value) in kvs { string(key); u32(type); data.append(value) }
+            return data
+        }
+        func stringValue(_ s: String) -> Data {
+            var d = Data(); withUnsafeBytes(of: UInt64(s.utf8.count).littleEndian) { d.append(contentsOf: $0) }
+            d.append(contentsOf: s.utf8); return d
+        }
+        let version = Data([1, 0, 0, 0])  // a u32 key/value before the architecture
+        let data = header([("general.file_type", 4, version), ("general.architecture", 8, stringValue("qwen4exp"))])
+        XCTAssertEqual(GGUFHeader.architecture(in: data), "qwen4exp")
+        XCTAssertNil(GGUFHeader.architecture(in: data.prefix(20)), "truncated before the key")
+        XCTAssertNil(GGUFHeader.architecture(in: Data("NOPE".utf8)))
+        XCTAssertNil(ModelCheck.problem(withArchitecture: "qwen4exp"))
+        XCTAssertNotNil(ModelCheck.problem(withArchitecture: "qwen2"))
+    }
+
+    func testSpecsForNewModels() {
+        let package = ModelCheck.spec(repository: "someone/Thing-Splash", layout: .package)
+        XCTAssertEqual(package?.kind, .package)
+        XCTAssertEqual(package?.folder, "~/models/thing-splash")
+        XCTAssertEqual(package?.minimumMemoryGiB, 36)
+        let gguf = ModelCheck.spec(repository: "someone/Flash-GGUF", layout: .gguf(firstShard: "a.gguf", hasMTP: false))
+        XCTAssertEqual(gguf?.extraFiles, [ModelSpec.mtpDraftHead], "a GGUF without its own MTP head gets the shared one")
+        XCTAssertEqual(gguf?.minimumMemoryGiB, 64)
+    }
+
+    func testCustomModelsAreStoredAndListedOnce() throws {
+        var config = ServerConfig()
+        config.customModels = [ModelSpec(repository: "someone/Thing-Splash", folder: "~/models/thing", title: "Thing",
+                                         kind: .package, minimumMemoryGiB: 36, recommendedMemoryGiB: 48),
+                               ModelSpec.qwen38_27B]
+        let decoded = try JSONDecoder().decode(ServerConfig.self, from: JSONEncoder().encode(config))
+        XCTAssertEqual(decoded.customModels.first?.repository, "someone/Thing-Splash")
+        XCTAssertEqual(decoded.availableModels.count, ModelSpec.catalog.count + 1, "a catalog model is not repeated")
+    }
+
+    func testPackagesNeedNoRoomForAPreparedCopy() {
+        let gb: Int64 = 1_000_000_000
+        XCTAssertEqual(DiskCheck.evaluate(total: 20 * gb, downloaded: 0, free: 35 * gb, prepares: false), .ok)
+        XCTAssertEqual(DiskCheck.evaluate(total: 20 * gb, downloaded: 0, free: 35 * gb, prepares: true),
+                       .noRoomToPrepare(shortBy: 15 * gb), "35 - 20 - 20 leaves -5 GB, 15 GB short of the reserve")
+    }
+}

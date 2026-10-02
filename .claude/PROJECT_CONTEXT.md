@@ -202,6 +202,10 @@ MIT); first release v26.10.0.
 - `Resources/Info.plist`: bundle id `local.slipstream.menubar`, `LSUIElement`, macOS 15. The version
   is set by `build-app.sh` (`MARKETING_VERSION`; `CFBundleVersion` = `git describe`).
 - `Assets/MenuBarItem.png`, `Assets/StatsPanel.png`: README screenshots taken by the user.
+- `scripts/make-icon.swift` → `Resources/AppIcon.icns` (committed; `CFBundleIconFile AppIcon`): the
+  web UI's bolt as a white outline with a soft glow on an indigo→violet rounded tile (macOS grid:
+  824/1024 tile, radius 185). Rerun it after changing the design:
+  `swift scripts/make-icon.swift Resources/AppIcon.icns preview.png`.
 
 ## Release process
 

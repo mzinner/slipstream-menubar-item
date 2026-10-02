@@ -100,6 +100,7 @@ Sources/SlipstreamMenubar/       AppKit menu, server control, SwiftUI panel and 
 Tests/SlipstreamMenubarCoreTests/
 scripts/build-app.sh             assembles and signs the .app bundle
 scripts/fake-server.py           stand-in Slipstream server for testing (outages, busy, served requests)
+scripts/make-icon.swift          draws Resources/AppIcon.icns from the bolt
 ```
 
 ## Releases

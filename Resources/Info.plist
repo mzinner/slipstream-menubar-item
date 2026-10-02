@@ -8,6 +8,8 @@
 	<string>Slipstream Menubar</string>
 	<key>CFBundleExecutable</key>
 	<string>SlipstreamMenubar</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>local.slipstream.menubar</string>
 	<key>CFBundleInfoDictionaryVersion</key>

@@ -1,13 +1,23 @@
 name: Release
 
 # Pushing a tag like v26.10.0 builds the app, tests it, and attaches
-# Slipstream-Menubar-<version>.zip to a GitHub release for that tag.
+# Slipstream-Menubar.app.<version>.dmg, Slipstream-Menubar.app.<version>.zip and
+# their SHA-256 sums to a GitHub release for that tag. Running it by hand with a
+# tag rebuilds the files of that existing release from the tagged commit.
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to build, e.g. v26.10.0
+        required: true
 
 permissions:
   contents: write
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
   release:
@@ -15,6 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ env.TAG }}
           fetch-depth: 0  # the build number comes from git describe
 
       - uses: maxim-lobanov/setup-xcode@v1
@@ -29,27 +40,39 @@ jobs:
 
       - name: Build the app
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${TAG#v}"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           MARKETING_VERSION="$VERSION" scripts/build-app.sh
 
       - name: Package
         run: |
-          ditto -c -k --sequesterRsrc --keepParent "build/Slipstream Menubar.app" "Slipstream-Menubar-$VERSION.zip"
-          shasum -a 256 "Slipstream-Menubar-$VERSION.zip" | tee "Slipstream-Menubar-$VERSION.zip.sha256"
+          APP="build/Slipstream Menubar.app"
+          ZIP="Slipstream-Menubar.app.$VERSION.zip"
+          DMG="Slipstream-Menubar.app.$VERSION.dmg"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
+          # The disk image opens to the app next to an Applications shortcut to drag it onto.
+          mkdir dmg
+          cp -R "$APP" dmg/
+          ln -s /Applications dmg/Applications
+          hdiutil create -volname "Slipstream Menubar $VERSION" -srcfolder dmg -fs HFS+ -format UDZO "$DMG"
+          hdiutil verify "$DMG"
+          shasum -a 256 "$ZIP" "$DMG" | tee "SHA256SUMS.$VERSION.txt"
 
       - name: Publish the release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.TAG }}
           name: Slipstream Menubar ${{ env.VERSION }}
           files: |
-            Slipstream-Menubar-${{ env.VERSION }}.zip
-            Slipstream-Menubar-${{ env.VERSION }}.zip.sha256
+            Slipstream-Menubar.app.${{ env.VERSION }}.dmg
+            Slipstream-Menubar.app.${{ env.VERSION }}.zip
+            SHA256SUMS.${{ env.VERSION }}.txt
           body: |
             Menu bar item for a local [Slipstream](https://github.com/npanj/slipstream) server.
 
-            **Install:** download `Slipstream-Menubar-${{ env.VERSION }}.zip`, unzip it, and move
-            *Slipstream Menubar.app* to /Applications.
+            **Install:** download one of
+            - `Slipstream-Menubar.app.${{ env.VERSION }}.dmg`: open it and drag *Slipstream Menubar* onto *Applications*, or
+            - `Slipstream-Menubar.app.${{ env.VERSION }}.zip`: unzip it and move *Slipstream Menubar.app* to /Applications.
 
             The app is signed ad hoc, not notarized, so macOS blocks it on first launch.
             Allow it once with *System Settings → Privacy & Security → Open Anyway*, or run:
@@ -59,3 +82,4 @@ jobs:
             ```
 
             Requires macOS 15 or later on Apple Silicon and a built Slipstream checkout.
+            Checksums: `SHA256SUMS.${{ env.VERSION }}.txt`.

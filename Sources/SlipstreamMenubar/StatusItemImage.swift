@@ -5,13 +5,14 @@ import AppKit
 enum StatusItemImage {
     static let height: CGFloat = 22
     private static let boltSide: CGFloat = 17
-    private static let gap: CGFloat = 3
+    /// The bolt's box already has ~3.5 pt of empty space on its right.
+    private static let gap: CGFloat = 1
     private static let font = NSFont.monospacedDigitSystemFont(ofSize: 9.4, weight: .semibold)
     private static let lineHeight: CGFloat = 10.2
 
     /// Width of the widest readout, so the item never changes size as values change.
     private static let readoutWidth: CGFloat = {
-        let widest = NSAttributedString(string: "↑ 8888", attributes: [.font: font])
+        let widest = NSAttributedString(string: "↑8888", attributes: [.font: font])
         return ceil(widest.size().width)
     }()
 
@@ -24,8 +25,8 @@ enum StatusItemImage {
                 let x = boltSide + gap
                 // Two lines centred on the bar; top line is the prompt rate.
                 let top = height / 2
-                drawLine("↑ " + compact(rates.prompt), x: x, baseline: top + 1.4)
-                drawLine("↓ " + compact(rates.output), x: x, baseline: top + 1.4 - lineHeight)
+                drawLine("↑" + compact(rates.prompt), x: x, baseline: top + 1.4)
+                drawLine("↓" + compact(rates.output), x: x, baseline: top + 1.4 - lineHeight)
             }
             return true
         }

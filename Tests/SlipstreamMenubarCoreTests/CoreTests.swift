@@ -243,3 +243,28 @@ final class NetworkAccessTests: XCTestCase {
         XCTAssertTrue(NetworkAddresses.localHostName()?.hasSuffix(".local") ?? true)
     }
 }
+
+final class TimeSeriesWindowTests: XCTestCase {
+    private func time(_ seconds: Double) -> Date { Date(timeIntervalSinceReferenceDate: seconds) }
+
+    func testDropsPointsOlderThanTheWindowButKeepsOneForTheLeftEdge() {
+        var series = TimeSeries(capacity: 1000, window: 10)
+        for second in stride(from: 0.0, through: 30, by: 3) { series.append(second, at: time(second)) }
+        // Window ends at 30: 21, 24, 27, 30 are inside, 18 is kept for the edge.
+        XCTAssertEqual(series.points.map(\.value), [18, 21, 24, 27, 30])
+    }
+
+    func testSlowSamplingNoLongerAccumulatesBeyondTheWindow() {
+        var series = TimeSeries(capacity: 400, window: 300)
+        for step in 0..<1000 { series.append(1, at: time(Double(step) * 3)) }  // 50 minutes at 3 s
+        XCTAssertLessThanOrEqual(series.points.count, 102)
+    }
+
+    func testPointsWithinAWindowEndingNow() {
+        var series = TimeSeries(capacity: 100)
+        for second in 0...10 { series.append(Double(second), at: time(Double(second))) }
+        XCTAssertEqual(series.points(within: 3, endingAt: time(10)).map(\.value), [6, 7, 8, 9, 10])
+        XCTAssertEqual(series.points(within: 3, endingAt: time(100)).map(\.value), [10])
+        XCTAssertTrue(TimeSeries(capacity: 1).points(within: 3, endingAt: time(0)).isEmpty)
+    }
+}

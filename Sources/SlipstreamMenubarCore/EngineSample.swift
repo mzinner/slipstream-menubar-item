@@ -105,17 +105,36 @@ public struct TimeSeries: Sendable {
     }
 
     public let capacity: Int
+    /// Points older than this, relative to the newest, are dropped.
+    public let window: TimeInterval
     public private(set) var points: [Point] = []
 
-    public init(capacity: Int) {
+    /// `capacity` is a hard cap; `window` is what is kept at any sampling rate.
+    public init(capacity: Int, window: TimeInterval = .infinity) {
         self.capacity = capacity
+        self.window = window
     }
 
     public mutating func append(_ value: Double, at time: Date) {
         points.append(Point(time: time, value: value))
+        // Keep the newest point older than the window, so a chart's line can
+        // still enter from the left edge.
+        let cutoff = time.addingTimeInterval(-window)
+        if let firstInside = points.firstIndex(where: { $0.time >= cutoff }), firstInside > 1 {
+            points.removeFirst(firstInside - 1)
+        }
         if points.count > capacity {
             points.removeFirst(points.count - capacity)
         }
+    }
+
+    /// The points to draw for a window ending at `end`, plus the one just before it.
+    public func points(within window: TimeInterval, endingAt end: Date) -> [Point] {
+        let start = end.addingTimeInterval(-window)
+        guard let firstInside = points.firstIndex(where: { $0.time >= start }) else {
+            return points.last.map { [$0] } ?? []
+        }
+        return Array(points[max(0, firstInside - 1)...])
     }
 
     public mutating func removeAll() {

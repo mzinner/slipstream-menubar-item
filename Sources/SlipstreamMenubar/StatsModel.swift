@@ -5,8 +5,10 @@ import SlipstreamMenubarCore
 /// statistics all the time, so the charts already have data when the panel opens.
 @MainActor
 final class StatsModel: ObservableObject {
-    /// About five minutes at the panel's one-second refresh.
-    static let capacity = 300
+    /// What the charts show.
+    static let window: TimeInterval = 300
+    /// A hard cap above the window at the fastest (one-second) refresh.
+    static let capacity = 400
 
     @Published private(set) var engine: EngineSample?
     @Published private(set) var rates: EngineRates?
@@ -15,17 +17,17 @@ final class StatsModel: ObservableObject {
     @Published private(set) var kvBlockTokens = 32
     @Published private(set) var metricsError: String?
 
-    @Published private(set) var outputTokensPerSecond = TimeSeries(capacity: capacity)
-    @Published private(set) var promptTokensPerSecond = TimeSeries(capacity: capacity)
-    @Published private(set) var kvActiveTokens = TimeSeries(capacity: capacity)
-    @Published private(set) var kvCachedTokens = TimeSeries(capacity: capacity)
-    @Published private(set) var activeRequests = TimeSeries(capacity: capacity)
-    @Published private(set) var queuedRequests = TimeSeries(capacity: capacity)
-    @Published private(set) var engineMemoryUsed = TimeSeries(capacity: capacity)
-    @Published private(set) var cpuUsage = TimeSeries(capacity: capacity)
-    @Published private(set) var gpuUsage = TimeSeries(capacity: capacity)
-    @Published private(set) var systemMemoryUsed = TimeSeries(capacity: capacity)
-    @Published private(set) var swapUsed = TimeSeries(capacity: capacity)
+    @Published private(set) var outputTokensPerSecond = TimeSeries(capacity: capacity, window: window)
+    @Published private(set) var promptTokensPerSecond = TimeSeries(capacity: capacity, window: window)
+    @Published private(set) var kvActiveTokens = TimeSeries(capacity: capacity, window: window)
+    @Published private(set) var kvCachedTokens = TimeSeries(capacity: capacity, window: window)
+    @Published private(set) var activeRequests = TimeSeries(capacity: capacity, window: window)
+    @Published private(set) var queuedRequests = TimeSeries(capacity: capacity, window: window)
+    @Published private(set) var engineMemoryUsed = TimeSeries(capacity: capacity, window: window)
+    @Published private(set) var cpuUsage = TimeSeries(capacity: capacity, window: window)
+    @Published private(set) var gpuUsage = TimeSeries(capacity: capacity, window: window)
+    @Published private(set) var systemMemoryUsed = TimeSeries(capacity: capacity, window: window)
+    @Published private(set) var swapUsed = TimeSeries(capacity: capacity, window: window)
 
     /// Seconds the plotted token rates are averaged over.
     static let rateWindow: TimeInterval = 3

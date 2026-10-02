@@ -324,14 +324,16 @@ private struct SeriesChart: View {
         var id: String { "\(series)-\(time.timeIntervalSinceReferenceDate)" }
     }
 
-    private var points: [Point] {
+    private func points(endingAt end: Date) -> [Point] {
         series.flatMap { name, _, values in
-            values.points.map { Point(series: name, time: $0.time, value: $0.value) }
+            values.points(within: StatsModel.window, endingAt: end)
+                .map { Point(series: name, time: $0.time, value: $0.value) }
         }
     }
 
     var body: some View {
         let now = Date()
+        let points = points(endingAt: now)
         Chart(points) { point in
             if stacked {
                 AreaMark(x: .value("Time", point.time), y: .value("Value", point.value))
@@ -343,8 +345,11 @@ private struct SeriesChart: View {
             }
         }
         .chartForegroundStyleScale(domain: series.map(\.0), range: series.map(\.1))
-        .chartXScale(domain: now.addingTimeInterval(-300)...now)
-        .chartYScale(domain: 0...yDomainMaximum)
+        .chartXScale(domain: now.addingTimeInterval(-StatsModel.window)...now)
+        // Lines and areas stop at the grid: the point kept from just before the
+        // window would otherwise be drawn over the card's edge.
+        .chartPlotStyle { plot in plot.clipped() }
+        .chartYScale(domain: 0...yDomainMaximum(for: points))
         .chartXAxis {
             AxisMarks(values: .stride(by: .minute)) { _ in
                 AxisGridLine()
@@ -368,7 +373,7 @@ private struct SeriesChart: View {
         .frame(height: height)
     }
 
-    private var yDomainMaximum: Double {
+    private func yDomainMaximum(for points: [Point]) -> Double {
         if let yMaximum, yMaximum > 0 { return yMaximum }
         let peak: Double
         if stacked {

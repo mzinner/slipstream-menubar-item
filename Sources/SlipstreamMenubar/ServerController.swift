@@ -72,7 +72,7 @@ final class ServerController: ObservableObject {
         let (healthOK, readyOK) = await (health, ready)
 
         let ours = livePid != nil && livePid == spawnedPid
-        healthFailures = (livePid != nil && !readyOK) ? healthFailures + 1 : 0
+        healthFailures = (livePid != nil && !healthOK) ? healthFailures + 1 : 0
         let observation = StatusObservation(
             processAlive: livePid != nil,
             healthOK: healthOK,

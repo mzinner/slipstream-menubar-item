@@ -129,7 +129,11 @@ public struct ConfigStore: Sendable {
         self.url = url
     }
 
+    /// `SLIPSTREAM_MENUBAR_CONFIG` points a test instance at another file.
     public static func defaultURL() -> URL {
+        if let override = ProcessInfo.processInfo.environment["SLIPSTREAM_MENUBAR_CONFIG"], !override.isEmpty {
+            return URL(fileURLWithPath: override)
+        }
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         return support.appendingPathComponent("Slipstream/menubar.json")
     }

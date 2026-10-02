@@ -58,13 +58,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pollTask?.cancel()  // the server keeps running
     }
 
-    /// One second while someone is looking or the state is changing; two while
-    /// serving, for the menu bar readout; three when stopped.
+    /// Two seconds while serving or someone is looking (the rates average over three),
+    /// one while the state is changing, three when stopped.
     private var pollInterval: Double {
-        if panel.isVisible || menuOpen { return 1 }
         switch server.status {
-        case .running: return 2
-        case .stopped: return 3
+        case .running, .unresponsive: return 2
+        case .stopped, .failed: return panel.isVisible || menuOpen ? 2 : 3
         default: return 1
         }
     }

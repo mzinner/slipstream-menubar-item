@@ -108,7 +108,11 @@ struct StatsContent: View {
     var body: some View {
             VStack(alignment: .leading, spacing: compact ? 8 : 14) {
                 ServerHeader(server: server, stats: stats)
-                if server.status == .running, let engine = stats.engine {
+                // Kept through interruptions: the charts shade the stretch without data.
+                if let engine = stats.engine {
+                    if let error = stats.metricsError, server.status == .running {
+                        Notice(text: error)
+                    }
                     ServingSections(stats: stats, engine: engine)
                 } else if server.status == .running, let error = stats.metricsError {
                     Notice(text: error)
@@ -192,9 +196,9 @@ private struct ServingSections: View {
                 ("Avg while busy", Format.rate(stats.averageOutputWhileBusy)),
                 ("Prompt", Format.rate(stats.rates?.promptTokensPerSecond)),
             ], colors: ["Output": outputColor, "Prompt": promptColor])
-            SeriesChart(series: [("Output tok/s", outputColor, stats.outputTokensPerSecond)],
+            SeriesChart(gaps: stats.gaps, series: [("Output tok/s", outputColor, stats.outputTokensPerSecond)],
                         valueLabel: { Format.tokens($0) }, minimumTop: 50)
-            SeriesChart(series: [("Prompt tok/s", promptColor, stats.promptTokensPerSecond)],
+            SeriesChart(gaps: stats.gaps, series: [("Prompt tok/s", promptColor, stats.promptTokensPerSecond)],
                         valueLabel: { Format.tokens($0) }, height: 70, minimumTop: 500)
         }
 
@@ -206,7 +210,7 @@ private struct ServingSections: View {
                 ("Free", Format.tokens(engine.kvPagesFree * block)),
                 ("Capacity", Format.tokens(engine.kvPagesTotal * block)),
             ], colors: ["In use": .orange, "Cached": .purple])
-            SeriesChart(series: [("In use", .orange, stats.kvActiveTokens),
+            SeriesChart(gaps: stats.gaps, series: [("In use", .orange, stats.kvActiveTokens),
                                  ("Cached", .purple, stats.kvCachedTokens)],
                         valueLabel: { Format.tokens($0) }, stacked: true, minimumTop: 4000)
         }
@@ -218,7 +222,7 @@ private struct ServingSections: View {
                 ("Completed", String(format: "%.0f", engine.requestsCompleted)),
                 ("Failed", String(format: "%.0f", engine.requestsFailed)),
             ], colors: ["Active": .green, "Queued": .red])
-            SeriesChart(series: [("Active", .green, stats.activeRequests),
+            SeriesChart(gaps: stats.gaps, series: [("Active", .green, stats.activeRequests),
                                  ("Queued", .red, stats.queuedRequests)],
                         valueLabel: { String(format: "%.0f", $0) }, height: 60, minimumTop: 4)
             Figures([
@@ -238,7 +242,7 @@ private struct ServingSections: View {
                 ("Headroom", Format.gigabytes(engine.memoryHeadroomBytes)),
                 ("Pressure", engine.memoryPressure ?? "–"),
             ], colors: ["Used": .indigo])
-            SeriesChart(series: [("Used", .indigo, stats.engineMemoryUsed)],
+            SeriesChart(gaps: stats.gaps, series: [("Used", .indigo, stats.engineMemoryUsed)],
                         valueLabel: { Format.axisGigabytes($0) }, height: 60,
                         yMaximum: engine.memoryLimitBytes)
         }
@@ -331,6 +335,8 @@ private struct Notice: View {
 
 /// A line (or stacked area) chart over the last five minutes.
 private struct SeriesChart: View {
+    /// Stretches without data, shaded in light gray.
+    var gaps: [DataGap] = []
     let series: [(String, Color, TimeSeries)]
     let valueLabel: (Double) -> String
     var height: CGFloat = 90
@@ -346,29 +352,48 @@ private struct SeriesChart: View {
 
     private struct Point: Identifiable {
         let series: String
+        let segment: Int
         let time: Date
         let value: Double
         var id: String { "\(series)-\(time.timeIntervalSinceReferenceDate)" }
+        /// Lines join only within one series' segment, so they break at data gaps.
+        var line: String { "\(series)#\(segment)" }
+    }
+
+    private struct Shade: Identifiable {
+        let range: ClosedRange<Date>
+        var id: Date { range.lowerBound }
     }
 
     private func points(endingAt end: Date) -> [Point] {
         series.flatMap { name, _, values in
             values.points(within: StatsModel.window, endingAt: end)
-                .map { Point(series: name, time: $0.time, value: $0.value) }
+                .map { Point(series: name, segment: $0.segment, time: $0.time, value: $0.value) }
         }
     }
 
     var body: some View {
         let now = Date()
         let points = points(endingAt: now)
-        Chart(points) { point in
-            if stacked {
-                AreaMark(x: .value("Time", point.time), y: .value("Value", point.value))
-                    .foregroundStyle(by: .value("Series", point.series))
-            } else {
-                LineMark(x: .value("Time", point.time), y: .value("Value", point.value))
-                    .foregroundStyle(by: .value("Series", point.series))
-                    .interpolationMethod(.monotone)
+        let window = now.addingTimeInterval(-StatsModel.window)...now
+        let shades = gaps.compactMap { $0.clipped(to: window).map(Shade.init) }
+        Chart {
+            ForEach(shades) { shade in
+                RectangleMark(xStart: .value("Time", shade.range.lowerBound),
+                              xEnd: .value("Time", shade.range.upperBound))
+                    .foregroundStyle(Color.gray.opacity(0.12))
+            }
+            ForEach(points) { point in
+                if stacked {
+                    AreaMark(x: .value("Time", point.time), y: .value("Value", point.value),
+                             series: .value("Line", point.line))
+                        .foregroundStyle(by: .value("Series", point.series))
+                } else {
+                    LineMark(x: .value("Time", point.time), y: .value("Value", point.value),
+                             series: .value("Line", point.line))
+                        .foregroundStyle(by: .value("Series", point.series))
+                        .interpolationMethod(.monotone)
+                }
             }
         }
         .chartForegroundStyleScale(domain: series.map(\.0), range: series.map(\.1))

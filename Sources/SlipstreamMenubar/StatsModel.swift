@@ -32,6 +32,12 @@ final class StatsModel: ObservableObject {
     /// Seconds the plotted token rates are averaged over.
     static let rateWindow: TimeInterval = 3
 
+    /// Stretches without engine metrics, drawn as shaded areas on the serving charts.
+    @Published private(set) var gaps: [DataGap] = []
+    /// Whether the last tick got metrics.
+    private var receiving = false
+    /// Increments at each gap, so chart lines are not drawn across it.
+    private var segment = 0
     private var recentSamples: [EngineSample] = []
     private let sampler = SystemSampler()
     private let session: URLSession
@@ -52,19 +58,23 @@ final class StatsModel: ObservableObject {
         systemMemoryUsed.append(snapshot.memoryUsedBytes, at: now)
         swapUsed.append(snapshot.swapUsedBytes, at: now)
 
-        guard serverReady else {
-            if engine != nil { clearEngine() }
+        guard serverReady, let text = await fetch("/metrics", port: port, apiKey: apiKey) else {
+            noMetrics(at: now)
             return
         }
-        guard let text = await fetch("/metrics", port: port, apiKey: apiKey) else { return }
         // Stamp the counters when they arrive: the rates divide by the time between
         // readings, and the request itself can take a while when the engine is busy.
         let received = Date()
         guard let sample = EngineSample(metrics: PrometheusText.parse(text), time: received) else {
             metricsError = "The server's /metrics has no Slipstream v2 metrics"
+            noMetrics(at: received)
             return
         }
         metricsError = nil
+        if receiving == false, let index = gaps.indices.last, gaps[index].end == nil {
+            gaps[index].end = received
+        }
+        receiving = true
         // Rates over a window of a few seconds: MTP drafting delivers tokens in
         // bursts, so one-second deltas swing between zero and twice the real speed.
         recentSamples.append(sample)
@@ -73,16 +83,17 @@ final class StatsModel: ObservableObject {
             ?? recentSamples.first
         if let base, base.time < received, let rates = EngineRates.between(base, sample) {
             self.rates = rates
-            outputTokensPerSecond.append(rates.outputTokensPerSecond, at: received)
-            promptTokensPerSecond.append(rates.promptTokensPerSecond, at: received)
+            outputTokensPerSecond.append(rates.outputTokensPerSecond, at: received, segment: segment)
+            promptTokensPerSecond.append(rates.promptTokensPerSecond, at: received, segment: segment)
         }
         engine = sample
         let block = Double(kvBlockTokens)
-        kvActiveTokens.append(sample.kvPagesActive * block, at: received)
-        kvCachedTokens.append(sample.kvPagesCached * block, at: received)
-        activeRequests.append(sample.activeRequests, at: received)
-        queuedRequests.append(sample.queued, at: received)
-        engineMemoryUsed.append(sample.memoryUsedBytes, at: received)
+        kvActiveTokens.append(sample.kvPagesActive * block, at: received, segment: segment)
+        kvCachedTokens.append(sample.kvPagesCached * block, at: received, segment: segment)
+        activeRequests.append(sample.activeRequests, at: received, segment: segment)
+        queuedRequests.append(sample.queued, at: received, segment: segment)
+        engineMemoryUsed.append(sample.memoryUsedBytes, at: received, segment: segment)
+        pruneGaps(now: received)
 
         // /status answers slowly while the engine is busy; the limit rarely changes.
         if received.timeIntervalSince(lastStatusFetch) > 15 || maximumContextTokens == nil {
@@ -97,10 +108,34 @@ final class StatsModel: ObservableObject {
         return busy.isEmpty ? nil : busy.reduce(0, +) / Double(busy.count)
     }
 
+    /// No metrics this tick: open a gap where the data stopped, keep the history, and
+    /// forget the engine only once its last reading has left the charts' window.
+    private func noMetrics(at now: Date) {
+        if receiving {
+            receiving = false
+            segment += 1  // the next readings start a new line instead of joining the old one
+            recentSamples.removeAll()  // so the first rate after the gap does not span it
+            rates = nil
+            gaps.append(DataGap(start: engine?.time ?? now))
+        }
+        pruneGaps(now: now)
+        if let last = engine?.time, now.timeIntervalSince(last) > Self.window {
+            clearEngine()
+        }
+    }
+
+    private func pruneGaps(now: Date) {
+        gaps.removeAll { gap in
+            guard let end = gap.end else { return false }
+            return now.timeIntervalSince(end) > Self.window
+        }
+    }
+
     private func clearEngine() {
         engine = nil
         rates = nil
         recentSamples.removeAll()
+        gaps.removeAll()
         maximumContextTokens = nil
         for series in [\StatsModel.outputTokensPerSecond, \.promptTokensPerSecond, \.kvActiveTokens,
                        \.kvCachedTokens, \.activeRequests, \.queuedRequests, \.engineMemoryUsed] {

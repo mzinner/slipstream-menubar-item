@@ -56,11 +56,15 @@ Keychain.
 - **Stop.** SIGTERM, then SIGKILL if the server is still running after 30 seconds.
   Force Stop sends SIGKILL right away.
 - **Quit** leaves the server running; the next launch picks it up again.
-- **Stats.** `/metrics` once a second while the panel or menu is open, every three
+- **Stats.** `/metrics` every two seconds while serving, every three
   seconds otherwise, plus `/status` every 15 seconds for the context limit. Token rates
   are counter deltas over a three-second wall-clock window. The engine's own
   `*_tokens_per_second` gauges divide by GPU step time and read far higher than what
-  clients receive.
+  clients receive. History is kept when metrics stop arriving; the stretch without data
+  is shaded gray and lines are not drawn across it.
+- **Liveness.** `/ready` only decides when a starting server counts as running: once
+  loaded, the server answers 503 there whenever it is saturated. After that, "Not
+  responding" means three failed `/health` checks in a row.
 - **System.** CPU from per-core tick counters, GPU utilization from the accelerator's
   IOKit `PerformanceStatistics`, memory from `vm_statistics64`, swap from
   `vm.swapusage`: public APIs only, no helper or entitlements.

@@ -156,7 +156,7 @@ public struct StatusObservation: Equatable, Sendable {
     public var stopping: Bool
     /// The previous status, so a ready server that stops answering reads as unresponsive.
     public var previous: ServerStatus
-    /// Consecutive failed health checks while the process is alive.
+    /// Consecutive failed `/health` checks while the process is alive.
     public var healthFailures: Int
     /// Exit description when a server this app started has just exited.
     public var exitDescription: String?
@@ -192,7 +192,11 @@ public enum StatusResolver {
         }
         if observation.stopping { return .stopping }
         if observation.readyOK { return .running }
+        // `/ready` is a readiness check: once loaded, the server reports 503 there
+        // whenever it is saturated (queue full, engine too busy to answer its status
+        // in time, critical memory pressure). Only `/health` says whether it is alive.
         if observation.previous == .running || observation.previous == .unresponsive {
+            if observation.healthOK { return .running }
             return observation.healthFailures >= unresponsiveAfter ? .unresponsive : observation.previous
         }
         if observation.healthOK { return .loading }

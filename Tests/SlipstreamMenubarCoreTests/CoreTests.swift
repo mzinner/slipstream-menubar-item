@@ -111,6 +111,16 @@ final class StatusResolverTests: XCTestCase {
         XCTAssertEqual(StatusResolver.resolve(.init(processAlive: true, healthOK: true, readyOK: true)), .running)
     }
 
+    func testASaturatedServerStaysRunningWhileHealthy() {
+        // Under load /ready answers 503 but /health stays 200.
+        let busy = StatusObservation(processAlive: true, healthOK: true, readyOK: false,
+                                     previous: .running, healthFailures: 0)
+        XCTAssertEqual(StatusResolver.resolve(busy), .running)
+        var recovered = busy
+        recovered.previous = .unresponsive
+        XCTAssertEqual(StatusResolver.resolve(recovered), .running)
+    }
+
     func testARunningServerTurnsUnresponsiveOnlyAfterRepeatedFailures() {
         let blip = StatusObservation(processAlive: true, healthOK: false, readyOK: false,
                                      previous: .running, healthFailures: 1)
@@ -266,5 +276,23 @@ final class TimeSeriesWindowTests: XCTestCase {
         XCTAssertEqual(series.points(within: 3, endingAt: time(10)).map(\.value), [6, 7, 8, 9, 10])
         XCTAssertEqual(series.points(within: 3, endingAt: time(100)).map(\.value), [10])
         XCTAssertTrue(TimeSeries(capacity: 1).points(within: 3, endingAt: time(0)).isEmpty)
+    }
+}
+
+final class DataGapTests: XCTestCase {
+    private func time(_ seconds: Double) -> Date { Date(timeIntervalSinceReferenceDate: seconds) }
+
+    func testClipsToTheChartWindow() {
+        let window = time(100)...time(400)
+        XCTAssertEqual(DataGap(start: time(50), end: time(150)).clipped(to: window), time(100)...time(150))
+        XCTAssertEqual(DataGap(start: time(380)).clipped(to: window), time(380)...time(400), "open gap runs to now")
+        XCTAssertNil(DataGap(start: time(10), end: time(90)).clipped(to: window))
+    }
+
+    func testSegmentsAreKeptPerPoint() {
+        var series = TimeSeries(capacity: 10)
+        series.append(1, at: time(1), segment: 0)
+        series.append(2, at: time(9), segment: 1)
+        XCTAssertEqual(series.points.map(\.segment), [0, 1])
     }
 }

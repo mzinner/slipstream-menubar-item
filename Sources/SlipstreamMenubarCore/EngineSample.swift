@@ -101,6 +101,8 @@ public struct TimeSeries: Sendable {
     public struct Point: Identifiable, Equatable, Sendable {
         public var time: Date
         public var value: Double
+        /// Points in different segments are not joined: a new one starts after a data gap.
+        public var segment: Int = 0
         public var id: Date { time }
     }
 
@@ -115,8 +117,8 @@ public struct TimeSeries: Sendable {
         self.window = window
     }
 
-    public mutating func append(_ value: Double, at time: Date) {
-        points.append(Point(time: time, value: value))
+    public mutating func append(_ value: Double, at time: Date, segment: Int = 0) {
+        points.append(Point(time: time, value: value, segment: segment))
         // Keep the newest point older than the window, so a chart's line can
         // still enter from the left edge.
         let cutoff = time.addingTimeInterval(-window)
@@ -143,4 +145,22 @@ public struct TimeSeries: Sendable {
 
     public var last: Double? { points.last?.value }
     public var maximum: Double? { points.map(\.value).max() }
+}
+
+/// A stretch of time in which no engine metrics arrived; `end` is nil while it lasts.
+public struct DataGap: Equatable, Sendable {
+    public var start: Date
+    public var end: Date?
+
+    public init(start: Date, end: Date? = nil) {
+        self.start = start
+        self.end = end
+    }
+
+    /// The gap's extent clipped to a chart window, or nil when it lies outside it.
+    public func clipped(to window: ClosedRange<Date>) -> ClosedRange<Date>? {
+        let lower = max(start, window.lowerBound)
+        let upper = min(end ?? window.upperBound, window.upperBound)
+        return lower < upper ? lower...upper : nil
+    }
 }

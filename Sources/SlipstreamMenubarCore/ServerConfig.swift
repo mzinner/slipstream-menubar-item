@@ -145,7 +145,9 @@ public struct ServerConfig: Codable, Equatable, Sendable {
         if listenOnNetwork, let installation, !installation.supportsHost {
             errors.append("Listening on the network needs a Slipstream whose launcher has `serve --host`")
         }
-        if raiseGPULimit, !(8192...Int(ProcessInfo.processInfo.physicalMemory / 1_048_576)).contains(gpuWiredLimitMB) {
+        // Two comparisons, not a range: below 8 GB of memory (a CI runner) the range would be inverted and trap.
+        if raiseGPULimit,
+           gpuWiredLimitMB < 8192 || gpuWiredLimitMB > Int(ProcessInfo.processInfo.physicalMemory / 1_048_576) {
             errors.append("GPU memory limit must be between 8192 MB and this Mac's memory")
         }
         if !(1...65535).contains(port) {

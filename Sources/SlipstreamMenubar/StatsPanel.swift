@@ -156,14 +156,16 @@ private struct ServingSections: View {
 
     var body: some View {
         Section(title: "Throughput") {
+            let outputColor = Color.blue
+            let promptColor = Color.teal
             Figures([
                 ("Output", Format.rate(stats.rates?.outputTokensPerSecond)),
                 ("Avg while busy", Format.rate(stats.averageOutputWhileBusy)),
                 ("Prompt", Format.rate(stats.rates?.promptTokensPerSecond)),
-            ])
-            SeriesChart(series: [("Output tok/s", .blue, stats.outputTokensPerSecond)],
+            ], colors: ["Output": outputColor, "Prompt": promptColor])
+            SeriesChart(series: [("Output tok/s", outputColor, stats.outputTokensPerSecond)],
                         valueLabel: { Format.tokens($0) }, minimumTop: 50)
-            SeriesChart(series: [("Prompt tok/s", .teal, stats.promptTokensPerSecond)],
+            SeriesChart(series: [("Prompt tok/s", promptColor, stats.promptTokensPerSecond)],
                         valueLabel: { Format.tokens($0) }, height: 70, minimumTop: 500)
         }
 
@@ -259,16 +261,24 @@ private struct Section<Content: View>: View {
 
 private struct Figures: View {
     let items: [(String, String)]
+    /// A dot after the label, keyed by label, matching that value's chart line.
+    let colors: [String: Color]
 
-    init(_ items: [(String, String)]) {
+    init(_ items: [(String, String)], colors: [String: Color] = [:]) {
         self.items = items
+        self.colors = colors
     }
 
     var body: some View {
         HStack(alignment: .top, spacing: 16) {
             ForEach(items.indices, id: \.self) { index in
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(items[index].0).font(.caption2).foregroundStyle(.secondary)
+                    HStack(spacing: 4) {
+                        Text(items[index].0).font(.caption2).foregroundStyle(.secondary)
+                        if let color = colors[items[index].0] {
+                            Circle().fill(color).frame(width: 6, height: 6)
+                        }
+                    }
                     Text(items[index].1).font(.system(.callout, design: .rounded).monospacedDigit())
                 }
             }

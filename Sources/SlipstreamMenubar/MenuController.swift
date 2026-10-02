@@ -7,6 +7,7 @@ import SlipstreamMenubarCore
 ///   Start Server / Stop Server / Force Stop
 ///   ─────
 ///   Stats Panel
+///   Open Web UI
 ///   ─────
 ///   Settings…  ⌘,
 ///   About Slipstream Menubar
@@ -27,6 +28,7 @@ final class MenuController: NSObject, NSMenuDelegate {
     private var stopItem: NSMenuItem!
     private var forceStopItem: NSMenuItem!
     private var panelItem: NSMenuItem!
+    private var webUIItem: NSMenuItem!
 
     struct Actions {
         var start: () -> Void
@@ -68,6 +70,7 @@ final class MenuController: NSObject, NSMenuDelegate {
         forceStopItem = add("Force Stop", #selector(forceStop))
         menu.addItem(.separator())
         panelItem = add("Stats Panel", #selector(togglePanel), key: "s")
+        webUIItem = add("Open Web UI", #selector(openWebUI), key: "o")
         menu.addItem(.separator())
         add("Settings…", #selector(settings), key: ",")
         add("About Slipstream Menubar", #selector(about))
@@ -125,6 +128,9 @@ final class MenuController: NSObject, NSMenuDelegate {
         stopItem.isEnabled = status != .stopping
         forceStopItem.isHidden = !(status == .unresponsive || status == .stopping)
         panelItem.state = actions.isPanelVisible() ? .on : .off
+        // The chat page is served at / unless the server runs with --no-webui.
+        webUIItem.isEnabled = status == .running && !server.config.noWebUI
+        webUIItem.toolTip = server.config.noWebUI ? "The web UI is turned off in Settings" : nil
     }
 
     /// The status item's on-screen width and its image's width, for layout checks.
@@ -145,6 +151,9 @@ final class MenuController: NSObject, NSMenuDelegate {
     @objc private func stop() { actions.stop() }
     @objc private func forceStop() { actions.forceStop() }
     @objc private func togglePanel() { actions.togglePanel() }
+    @objc private func openWebUI() {
+        if let url = URL(string: "http://127.0.0.1:\(server.port)/") { NSWorkspace.shared.open(url) }
+    }
     @objc private func install() { actions.install() }
     @objc private func downloadModel() { actions.downloadModel() }
     @objc private func settings() { actions.settings() }

@@ -4,9 +4,15 @@ import AppKit
 /// readouts (↑ prompt tok/s over ↓ output tok/s) in the menu bar's text color.
 enum StatusItemImage {
     static let height: CGFloat = 22
-    private static let boltSide: CGFloat = 17
-    /// The bolt's box already has ~3.5 pt of empty space on its right.
-    private static let gap: CGFloat = 1
+    /// Points per unit of the bolt's 24-unit SVG box (the size it had at 17 pt).
+    private static let boltScale: CGFloat = 17.0 / 24
+    /// A touch heavier than the web's 1.8, for menu bar size.
+    private static let boltLineWidth: CGFloat = 1.8 * boltScale * 1.15
+    /// The bolt's outline spans x 5...19 and y 2...22 of its box; the image is
+    /// cropped to that plus the stroke, so no empty box margin is left over.
+    private static let boltWidth: CGFloat = 14 * boltScale + boltLineWidth
+    private static let boltHeight: CGFloat = 20 * boltScale + boltLineWidth
+    private static let gap: CGFloat = 2
     private static let font = NSFont.monospacedDigitSystemFont(ofSize: 9.4, weight: .semibold)
     private static let lineHeight: CGFloat = 10.2
 
@@ -23,11 +29,11 @@ enum StatusItemImage {
 
     /// - Parameter rates: prompt and output tokens per second; nil shows the bolt alone.
     static func make(rates: (prompt: Double, output: Double)?) -> NSImage {
-        let width = rates == nil ? boltSide : boltSide + gap + readoutWidth
+        let width = ceil(rates == nil ? boltWidth : boltWidth + gap + readoutWidth)
         let image = NSImage(size: NSSize(width: width, height: height), flipped: false) { _ in
-            drawBolt(in: NSRect(x: 0, y: (height - boltSide) / 2, width: boltSide, height: boltSide))
+            drawBolt(originY: (height - boltHeight) / 2)
             if let rates {
-                let x = boltSide + gap
+                let x = boltWidth + gap
                 // Two lines centred on the bar; top line is the prompt rate.
                 let top = height / 2
                 let prompt = min(reviewValue ?? rates.prompt, maximumShown)
@@ -41,11 +47,13 @@ enum StatusItemImage {
         return image
     }
 
-    /// The bolt from the server's web UI: `M13.5 2 5 13h6l-.5 9L19 11h-6z` in a 24-unit box.
-    private static func drawBolt(in rect: NSRect) {
-        let scale = rect.width / 24
+    /// The bolt from the server's web UI: `M13.5 2 5 13h6l-.5 9L19 11h-6z` in a 24-unit box,
+    /// drawn with its outline's left edge at x = 0 and its bottom at `originY`.
+    private static func drawBolt(originY: CGFloat) {
+        let inset = boltLineWidth / 2
         func point(_ x: CGFloat, _ y: CGFloat) -> NSPoint {
-            NSPoint(x: rect.minX + x * scale, y: rect.minY + (24 - y) * scale)  // SVG y runs down
+            // SVG y runs down; shift so x 5 and y 22 land on the stroke's outer edge.
+            NSPoint(x: inset + (x - 5) * boltScale, y: originY + inset + (22 - y) * boltScale)
         }
         let path = NSBezierPath()
         path.move(to: point(13.5, 2))
@@ -55,7 +63,7 @@ enum StatusItemImage {
         path.line(to: point(19, 11))
         path.line(to: point(13, 11))
         path.close()
-        path.lineWidth = 1.8 * scale * 1.15  // a touch heavier than the web's, for menu bar size
+        path.lineWidth = boltLineWidth
         path.lineJoinStyle = .round
         path.lineCapStyle = .round
         NSColor.black.setStroke()

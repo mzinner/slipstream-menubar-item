@@ -136,6 +136,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let itemURL = url.deletingPathExtension().appendingPathExtension("menubar.png")
         writeMenuBarSample(to: itemURL)
         Task { @MainActor in
+            try? await Task.sleep(for: .seconds(8))  // the readout appears once the server is seen
+            let widths = menu.measuredWidths
+            let text = "item \(widths.item) pt, image \(widths.image) pt\n"
+            try? text.write(to: url.deletingPathExtension().appendingPathExtension("widths.txt"),
+                            atomically: true, encoding: .utf8)
+        }
+        Task { @MainActor in
             try? await Task.sleep(for: .seconds(45))
             let view = StatsContent(server: server, stats: stats)
                 .frame(width: 460)

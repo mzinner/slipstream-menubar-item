@@ -110,6 +110,11 @@ final class MenuController: NSObject, NSMenuDelegate {
         panelItem.state = actions.isPanelVisible() ? .on : .off
     }
 
+    /// The status item's on-screen width and its image's width, for layout checks.
+    var measuredWidths: (item: CGFloat, image: CGFloat) {
+        (statusItem.button?.frame.width ?? 0, statusItem.button?.image?.size.width ?? 0)
+    }
+
     func menuWillOpen(_ menu: NSMenu) {
         actions.menuOpened(true)
         update()

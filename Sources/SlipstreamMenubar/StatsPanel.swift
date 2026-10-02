@@ -228,6 +228,12 @@ private struct ServerHeader: View {
             if case .failed(let message) = server.status {
                 Text(message).font(.caption).foregroundStyle(.red).textSelection(.enabled)
             }
+            if server.missingMTPDraftHead && server.status.isActive {
+                Label("No MTP draft head next to the model: decoding runs one token per step, much slower. "
+                      + "Download the model again from the menu to add it, or see the server log.",
+                      systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+            }
             if case .preparing(let parts) = server.status {
                 // First start of a GGUF model: the converter writes <model>/prepared/.
                 VStack(alignment: .leading, spacing: 3) {

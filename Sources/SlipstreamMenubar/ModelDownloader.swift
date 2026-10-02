@@ -151,19 +151,38 @@ final class ModelDownloader: ObservableObject {
             }
         }
         defer { monitor.cancel() }
-        let status = try await run(hf, ["download", model.repository, "--local-dir", model.folderURL.path])
-        if aborting { throw CancellationError() }
-        guard status == 0 else {
-            throw DownloadError(message: "hf download failed (exit \(status)). \(stderrTail)")
+        // The model, then single files from other repositories (the MTP draft head),
+        // all into the same folder.
+        var commands = [["download", model.repository, "--local-dir", model.folderURL.path]]
+        commands += model.extraFiles.map { ["download", $0.repository, $0.path, "--local-dir", model.folderURL.path] }
+        for arguments in commands {
+            let status = try await run(hf, arguments)
+            if aborting { throw CancellationError() }
+            guard status == 0 else {
+                throw DownloadError(message: "hf \(arguments.prefix(3).joined(separator: " ")) failed "
+                                    + "(exit \(status)). \(stderrTail)")
+            }
         }
     }
 
-    /// Exact bytes the download will total, from the Hub's file listing.
-    private func totalSize() async throws -> Int64 {
+    /// Exact bytes the download will total, model and extra files.
+    func totalSize() async throws -> Int64 {
+        try await Self.totalSize(of: model)
+    }
+
+    /// From the Hub's file listings: every file of the model's repository, plus each extra file.
+    nonisolated static func totalSize(of model: ModelSpec) async throws -> Int64 {
         guard let url = model.treeURL else { throw DownloadError(message: "Invalid model repository") }
         let (data, response) = try await URLSession.shared.data(from: url)
-        guard (response as? HTTPURLResponse)?.statusCode == 200, let total = ModelSpec.totalSize(ofTree: data) else {
+        guard (response as? HTTPURLResponse)?.statusCode == 200, var total = ModelSpec.totalSize(ofTree: data) else {
             throw DownloadError(message: "Could not read the file list of \(model.repository) on Hugging Face")
+        }
+        for extra in model.extraFiles {
+            guard let url = extra.treeURL, let (data, _) = try? await URLSession.shared.data(from: url),
+                  let size = ModelSpec.size(of: extra.path, inTree: data) else {
+                throw DownloadError(message: "Could not find \(extra.path) in \(extra.repository) on Hugging Face")
+            }
+            total += size
         }
         return total
     }

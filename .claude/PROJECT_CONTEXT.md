@@ -78,8 +78,12 @@ MIT); first release v26.10.0.
   shows while `config.model` is missing (`ModelPresence`).
   - **Model:** `ModelSpec.swiftQwen38FlashNext`, the user's choice and the README's command:
     `hf download nitinpanj/Swift-Qwen3.8-Flash-Next-Q4_0-Q8out-v3-GGUF --local-dir
-    ~/models/swift-qwen38-flash-next-v3`. It has no `MTP/` folder; the engine loads the MTP head
-    only if `mtp-layer.bin` and `mtp-combiner.bin` exist, so it runs without (slower).
+    ~/models/swift-qwen38-flash-next-v3`. Its repository has no `MTP/` folder, so the app also
+    fetches `hf download nitinpanj/qwen38-flash-next-v3 MTP/mtp-shared-Q4_K_M.gguf` (1.9 GB) into
+    the same folder (`ModelSpec.extraFiles`), and the totals include it. Without it the engine runs
+    with no MTP head (loaded only if `mtp-layer.bin` and `mtp-combiner.bin` exist): one token per
+    step. The converter's `Warning: no MTP draft head` line is shown in the panel
+    (`LogProgress.missingMTPDraftHead`).
   - **Order of checks:** RAM ≥ 64 GB (warn), `hf` (`brew install hf`; without brew, ask, then
     open Terminal with the official installer in a `.command` file and poll for `brew`), disk
     (`DiskCheck`: block unless ≥ 10 GB stay free after the download, the user's rule; warn if the
@@ -364,6 +368,11 @@ MIT); first release v26.10.0.
     `install.sh`, with MariaDB-Shell-style install notes.
   - **`install.sh`** (POSIX sh, our own code modelled on mariadb-shell's GPL script): env
     `SLIPSTREAM_TAG/PREFIX/BINDIR/REPO/TOKEN`, a `gh auth token` fallback, keeps 2 versions.
+  - **v26.10.1:** the converter looks for the MTP sidecar only next to the model, takes a
+    reference package only via `--reference` (it used to search fixed folders of the author's other
+    model and quietly mix in their files), and warns with the `hf` command when no MTP head is found.
+    The upstreamable commit is alone on branch `fix/converter-own-folder` (stacked on PR #4's
+    branch) for a later PR.
   - **Upstream CI** is disabled in the fork's settings (`gh workflow disable`) rather than edited,
     to keep `ci.yml` rebase-clean. v26.10.0 is published.
   - **Verified on this Mac:** the app's installer installed it into `~/.local`, and it serves the

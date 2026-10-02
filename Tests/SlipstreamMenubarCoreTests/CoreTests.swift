@@ -513,3 +513,22 @@ final class DiskCheckTests: XCTestCase {
                        .insufficient(shortBy: 5 * gb))
     }
 }
+
+final class MTPDraftHeadTests: XCTestCase {
+    func testTheSwiftModelBringsTheMTPDraftHead() {
+        XCTAssertEqual(ModelSpec.swiftQwen38FlashNext.extraFiles,
+                       [ModelSpec.ExtraFile(repository: "nitinpanj/qwen38-flash-next-v3", path: "MTP/mtp-shared-Q4_K_M.gguf")])
+    }
+
+    func testSizeOfOneFileInATree() {
+        let tree = Data(#"[{"type":"file","path":"MTP/mtp-shared-Q4_K_M.gguf","size":1907151936},{"type":"file","path":"README.md","size":6908}]"#.utf8)
+        XCTAssertEqual(ModelSpec.size(of: "MTP/mtp-shared-Q4_K_M.gguf", inTree: tree), 1_907_151_936)
+        XCTAssertNil(ModelSpec.size(of: "missing.gguf", inTree: tree))
+    }
+
+    func testTheConvertersMissingMTPWarningIsNoticed() {
+        let log = "Warning: no MTP draft head (MTP/mtp-shared-Q4_K_M.gguf) next to the model; ...\n=== Fast GGUF Ingestion ===\n"
+        XCTAssertTrue(LogProgress.parse(log).missingMTPDraftHead)
+        XCTAssertFalse(LogProgress.parse("Sidecar: /m/MTP/mtp-shared-Q4_K_M.gguf\n").missingMTPDraftHead)
+    }
+}

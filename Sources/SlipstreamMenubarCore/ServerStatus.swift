@@ -81,6 +81,9 @@ public struct LogProgress: Equatable, Sendable {
     public var phase: Phase = .starting
     public var preparedParts = 0
     public var lastError: String?
+    /// The converter found no MTP draft head next to the model: the server will run
+    /// without speculative drafting.
+    public var missingMTPDraftHead = false
 
     /// The GGUF converter's parts: 48 layers, MTP layer, MTP combiner, head,
     /// embedding and the n-gram table.
@@ -100,6 +103,9 @@ public struct LogProgress: Equatable, Sendable {
                 progress.phase = .loading
             } else if line.contains(" Ready · ") {
                 progress.phase = .ready
+            }
+            if line.hasPrefix("Warning: no MTP draft head") {
+                progress.missingMTPDraftHead = true
             }
             if line.hasPrefix("error:") || line.contains("[ERROR]") {
                 progress.lastError = String(line)

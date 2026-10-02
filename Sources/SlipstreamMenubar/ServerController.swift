@@ -23,6 +23,8 @@ final class ServerController: ObservableObject {
     /// The Slipstream that Start runs: the installed release, or a checkout if the
     /// settings ask for one. Nil means nothing is installed.
     @Published private(set) var installation: SlipstreamInstallation?
+    /// The last preparation of this app's server ran without an MTP draft head.
+    @Published private(set) var missingMTPDraftHead = false
     /// Seconds left of a first-start GGUF preparation, from its pace so far.
     @Published private(set) var preparationSecondsLeft: TimeInterval?
     private var preparationStart: (time: Date, parts: Int)?
@@ -119,11 +121,13 @@ final class ServerController: ObservableObject {
         let undecided = !(status == .running || status == .unresponsive)
         let served = livePid != nil && healthOK && !readyOK && undecided
             ? await hasServedRequests(port: probePort) : false
+        let logProgress = ours || exitDescription != nil ? readLogProgress() : nil
+        missingMTPDraftHead = ours && (logProgress?.missingMTPDraftHead ?? false)
         let observation = StatusObservation(
             processAlive: livePid != nil,
             healthOK: healthOK,
             readyOK: readyOK,
-            logProgress: ours || exitDescription != nil ? readLogProgress() : nil,
+            logProgress: logProgress,
             stopping: stopping,
             previous: status,
             healthFailures: healthFailures,

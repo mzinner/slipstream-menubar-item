@@ -64,8 +64,7 @@ final class ModelWindowController: NSObject, NSWindowDelegate {
     /// copy written on the first start is only advised.
     private func checkDiskAndRun(_ downloader: ModelDownloader) async {
         let model = downloader.model
-        guard let url = model.treeURL, let (data, _) = try? await URLSession.shared.data(from: url),
-              let total = ModelSpec.totalSize(ofTree: data) else {
+        guard let total = try? await ModelDownloader.totalSize(of: model) else {
             ask("Could not reach Hugging Face", "The file list of \(model.repository) could not be read, so "
                 + "neither its size nor the free disk space can be checked. Try again later.", buttons: ["OK"])
             window?.close()
@@ -209,6 +208,11 @@ private struct ModelDownloadView: View {
             Text("hf download \(downloader.model.repository) --local-dir \(downloader.model.folder)")
                 .font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
+            ForEach(downloader.model.extraFiles, id: \.path) { extra in
+                Text("hf download \(extra.repository) \(extra.path) --local-dir \(downloader.model.folder)")
+                    .font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             switch downloader.phase {
             case .idle, .preparing:

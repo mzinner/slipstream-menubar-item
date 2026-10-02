@@ -5,14 +5,31 @@ import Foundation
 /// `hf download nitinpanj/Swift-Qwen3.8-Flash-Next-Q4_0-Q8out-v3-GGUF --local-dir
 /// ~/models/swift-qwen38-flash-next-v3`.
 public struct ModelSpec: Equatable, Sendable {
+    /// A single file from another repository, downloaded into the model's folder.
+    public struct ExtraFile: Equatable, Sendable {
+        public var repository: String
+        public var path: String
+
+        public var treeURL: URL? {
+            URL(string: "https://huggingface.co/api/models/\(repository)/tree/main?recursive=true")
+        }
+    }
+
     public var repository: String
     public var folder: String
     public var title: String
+    public var extraFiles: [ExtraFile] = []
+
+    /// The MTP draft head (speculative decoding) is only in the base model's repository;
+    /// the converter looks for it in the model's own `MTP/` folder.
+    public static let mtpDraftHead = ExtraFile(repository: "nitinpanj/qwen38-flash-next-v3",
+                                               path: "MTP/mtp-shared-Q4_K_M.gguf")
 
     public static let swiftQwen38FlashNext = ModelSpec(
         repository: "nitinpanj/Swift-Qwen3.8-Flash-Next-Q4_0-Q8out-v3-GGUF",
         folder: "~/models/swift-qwen38-flash-next-v3",
-        title: "Swift-Qwen3.8-Flash-Next V3")
+        title: "Swift-Qwen3.8-Flash-Next V3",
+        extraFiles: [mtpDraftHead])
 
     /// `SLIPSTREAM_MENUBAR_MODEL_REPO` / `_MODEL_DIR` swap in a small repository to test
     /// the download flow without fetching 100 GB.
@@ -21,14 +38,25 @@ public struct ModelSpec: Equatable, Sendable {
         guard let repository = environment["SLIPSTREAM_MENUBAR_MODEL_REPO"], !repository.isEmpty else {
             return .swiftQwen38FlashNext
         }
+        // SLIPSTREAM_MENUBAR_MODEL_EXTRA=owner/repo:path adds one extra file, like the MTP head.
+        let extra = environment["SLIPSTREAM_MENUBAR_MODEL_EXTRA"]?.split(separator: ":", maxSplits: 1)
+            .map(String.init)
         return ModelSpec(repository: repository,
                          folder: environment["SLIPSTREAM_MENUBAR_MODEL_DIR"] ?? "~/models/test-model",
-                         title: repository)
+                         title: repository,
+                         extraFiles: extra?.count == 2 ? [ExtraFile(repository: extra![0], path: extra![1])] : [])
     }
 
     public var folderURL: URL { URL(fileURLWithPath: (folder as NSString).expandingTildeInPath) }
     public var treeURL: URL? {
         URL(string: "https://huggingface.co/api/models/\(repository)/tree/main?recursive=true")
+    }
+
+    /// The size of one file in a Hub `tree` listing.
+    public static func size(of path: String, inTree data: Data) -> Int64? {
+        guard let entries = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return nil }
+        return entries.first { $0["path"] as? String == path }
+            .flatMap { ($0["size"] as? NSNumber)?.int64Value }
     }
 
     /// Sum of the file sizes in a Hub `tree` listing: what the download will total.

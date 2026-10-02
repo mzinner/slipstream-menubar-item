@@ -9,19 +9,11 @@ The item shows Slipstream's bolt and, while serving, two live readouts in the st
 [Vorssaint](https://github.com/vorssaint/vorssaint-utils)'s network indicator: ↓ prompt
 tokens per second (incoming) over ↑ output tokens per second (outgoing).
 
-```
-●  Running
-   qwen38-flash-next-v3 · :8090
-   ─────
-   Stop Server              (Start Server when stopped; Force Stop when stuck)
-   ─────
-   Stats Panel        ⌘S
-   ─────
-   Settings…          ⌘,
-   About Slipstream Menubar
-   ─────
-   Quit               ⌘Q
-```
+<p>
+  <img src="Assets/MenuBarItem.png" alt="The menu bar item with its ↓ prompt and ↑ output readout, and its menu: status, Stop Server, Stats Panel, Settings, About and Quit" width="322" align="top">
+  &nbsp;
+  <img src="Assets/StatsPanel.png" alt="The stats panel in the compact view: throughput, context and KV cache, requests, engine memory and system charts" width="415" align="top">
+</p>
 
 ## Download
 
@@ -116,6 +108,3 @@ with that version, and attaches the zip and its SHA-256 to a GitHub release.
 ## License
 
 MIT, © 2026 Mike Zinner ([mzinner](https://github.com/mzinner)).
-
-`--snapshot <file.png>` renders the panel to an image 45 seconds after launch, for
-checking the layout without screen-recording permission.

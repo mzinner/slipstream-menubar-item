@@ -69,7 +69,9 @@ struct StatsView: View {
                 .padding(.bottom, Self.edgeMargin)
         }
         .onScrollGeometryChange(for: Bool.self) { geometry in
-            geometry.contentOffset.y + geometry.containerSize.height < geometry.contentSize.height - 1
+            // The visible rect is in content coordinates, so title bar and other insets
+            // do not count as content that is still to come.
+            geometry.visibleRect.maxY < geometry.contentSize.height - 1
         } action: { _, hasMore in
             moreBelow = hasMore
         }
@@ -200,6 +202,7 @@ private struct ServingSections: View {
                         valueLabel: { Format.tokens($0) }, minimumTop: 50)
             SeriesChart(gaps: stats.gaps, series: [("Prompt tok/s", promptColor, stats.promptTokensPerSecond)],
                         valueLabel: { Format.tokens($0) }, height: 70, minimumTop: 500)
+                .padding(.top, 6)  // keeps its top axis label clear of the chart above
         }
 
         Section(title: "Context & KV cache") {

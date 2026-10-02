@@ -23,6 +23,14 @@ tokens per second (incoming) over ↑ output tokens per second (outgoing).
    Quit               ⌘Q
 ```
 
+## Download
+
+Get `Slipstream-Menubar-<version>.zip` from the
+[latest release](https://github.com/mzinner/slipstream-menubar-item/releases/latest), unzip it and
+move *Slipstream Menubar.app* to /Applications. The app is signed ad hoc, not notarized, so allow
+it once in *System Settings → Privacy & Security → Open Anyway*, or run
+`xattr -dr com.apple.quarantine "/Applications/Slipstream Menubar.app"`.
+
 ## Requirements
 
 - macOS 15 or later on Apple Silicon (the Slipstream engine itself needs 26.4)
@@ -99,6 +107,15 @@ Sources/SlipstreamMenubar/       AppKit menu, server control, SwiftUI panel and 
 Tests/SlipstreamMenubarCoreTests/
 scripts/build-app.sh             assembles and signs the .app bundle
 ```
+
+## Releases
+
+Pushing a tag such as `v26.10.0` runs `.github/workflows/release.yml`: it tests, builds the app
+with that version, and attaches the zip and its SHA-256 to a GitHub release.
+
+## License
+
+MIT, © 2026 Mike Zinner ([mzinner](https://github.com/mzinner)).
 
 `--snapshot <file.png>` renders the panel to an image 45 seconds after launch, for
 checking the layout without screen-recording permission.

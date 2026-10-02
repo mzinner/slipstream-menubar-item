@@ -4,6 +4,8 @@
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>Slipstream Menubar</string>
 	<key>CFBundleExecutable</key>
 	<string>SlipstreamMenubar</string>
 	<key>CFBundleIdentifier</key>
@@ -11,8 +13,6 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>Slipstream Menubar</string>
-	<key>CFBundleDisplayName</key>
 	<string>Slipstream Menubar</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
@@ -25,6 +25,6 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>
-	<string>Local tool for a Slipstream checkout.</string>
+	<string>Copyright © 2026 Mike Zinner. MIT License.</string>
 </dict>
 </plist>

@@ -1,0 +1,61 @@
+name: Release
+
+# Pushing a tag like v26.10.0 builds the app, tests it, and attaches
+# Slipstream-Menubar-<version>.zip to a GitHub release for that tag.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # the build number comes from git describe
+
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Toolchain
+        run: swift --version
+
+      - name: Test
+        run: swift test
+
+      - name: Build the app
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          MARKETING_VERSION="$VERSION" scripts/build-app.sh
+
+      - name: Package
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent "build/Slipstream Menubar.app" "Slipstream-Menubar-$VERSION.zip"
+          shasum -a 256 "Slipstream-Menubar-$VERSION.zip" | tee "Slipstream-Menubar-$VERSION.zip.sha256"
+
+      - name: Publish the release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Slipstream Menubar ${{ env.VERSION }}
+          files: |
+            Slipstream-Menubar-${{ env.VERSION }}.zip
+            Slipstream-Menubar-${{ env.VERSION }}.zip.sha256
+          body: |
+            Menu bar item for a local [Slipstream](https://github.com/npanj/slipstream) server.
+
+            **Install:** download `Slipstream-Menubar-${{ env.VERSION }}.zip`, unzip it, and move
+            *Slipstream Menubar.app* to /Applications.
+
+            The app is signed ad hoc, not notarized, so macOS blocks it on first launch.
+            Allow it once with *System Settings → Privacy & Security → Open Anyway*, or run:
+
+            ```sh
+            xattr -dr com.apple.quarantine "/Applications/Slipstream Menubar.app"
+            ```
+
+            Requires macOS 15 or later on Apple Silicon and a built Slipstream checkout.

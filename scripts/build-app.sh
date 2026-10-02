@@ -12,7 +12,12 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BINARY" "$APP/Contents/MacOS/SlipstreamMenubar"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
-VERSION=$(git -C "$ROOT" describe --always --dirty 2>/dev/null || echo dev)
-/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$APP/Contents/Info.plist"
+# MARKETING_VERSION (e.g. 26.10.0, from a release tag) sets the version users see;
+# the build number is the commit.
+BUILD=$(git -C "$ROOT" describe --always --dirty 2>/dev/null || echo dev)
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD" "$APP/Contents/Info.plist"
+if [ -n "${MARKETING_VERSION:-}" ]; then
+    /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $MARKETING_VERSION" "$APP/Contents/Info.plist"
+fi
 codesign --force --sign - --options runtime "$APP"
 echo "$APP"

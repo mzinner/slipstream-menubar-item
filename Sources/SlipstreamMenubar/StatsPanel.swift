@@ -184,7 +184,7 @@ private struct ServingSections: View {
                 ("Pressure", engine.memoryPressure ?? "–"),
             ])
             SeriesChart(series: [("Used", .indigo, stats.engineMemoryUsed)],
-                        valueLabel: { Format.gigabytes($0) }, height: 60,
+                        valueLabel: { Format.axisGigabytes($0) }, height: 60,
                         yMaximum: engine.memoryLimitBytes)
         }
     }
@@ -209,7 +209,7 @@ private struct SystemSections: View {
                     ("Swap", Format.gigabytes(system.swapUsedBytes)),
                 ])
                 SeriesChart(series: [("Memory", .indigo, stats.systemMemoryUsed), ("Swap", .red, stats.swapUsed)],
-                            valueLabel: { Format.gigabytes($0) }, height: 70,
+                            valueLabel: { Format.axisGigabytes($0) }, height: 70,
                             yMaximum: system.memoryTotalBytes)
             }
         }
@@ -272,8 +272,8 @@ private struct SeriesChart: View {
     /// The smallest top for the y axis, so an idle chart still has sensible labels.
     var minimumTop: Double = 1
 
-    /// Fits the widest label, e.g. "46.6 GB".
-    static let axisLabelWidth: CGFloat = 46
+    /// Fits the widest axis label ("100%", "4.0K", "47G"); values switch to K, M and G.
+    static let axisLabelWidth: CGFloat = 34
 
     private struct Point: Identifiable {
         let series: String

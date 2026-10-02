@@ -68,6 +68,11 @@ enum Format {
         String(format: "%.1f GB", value / 1_073_741_824)
     }
 
+    /// Short form for chart axes: "47G".
+    static func axisGigabytes(_ value: Double) -> String {
+        String(format: "%.0fG", value / 1_073_741_824)
+    }
+
     static func milliseconds(_ value: Double?) -> String {
         guard let value else { return "–" }
         return value >= 1000 ? String(format: "%.1f s", value / 1000) : String(format: "%.0f ms", value)

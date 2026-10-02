@@ -68,8 +68,11 @@ then fail with "unsupported weight format"; the next release refuses them before
 
 **New Model…** takes any Hugging Face id and checks it first: a ready-to-run Slipstream package
 in the format the engine loads (`splash-packed-q4-qwen4exp`), or GGUF files of the `qwen4exp` architecture (read from
-the first shard's header, without downloading it). Downloads use Hugging Face's `hf`, installed
-with Homebrew when missing, and show progress, speed and time left; at least 10 GB must stay free
+the first shard's header, without downloading it). Slipstream itself downloads the model
+(`slipstream pull <owner/repo>`, which needs a Slipstream that has it) into its model store,
+`~/.slipstream/models/<owner>/<repo>`, the same folder `slipstream serve --model <owner/repo>`
+uses, so a model is downloaded once. It also fetches the MTP draft head a GGUF repository
+lacks. The window shows progress, speed and time left; at least 10 GB must stay free
 afterwards. GGUF models are converted on their first start, which the panel shows as a progress bar.
 On a 64 GB Mac the app raises `iogpu.wired_limit_mb` (Settings → Memory, default 59392) before
 each start.

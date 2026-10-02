@@ -78,13 +78,12 @@ public enum ModelCheck {
     /// A model entry for a repository that passed the checks.
     public static func spec(repository: String, layout: Layout) -> ModelSpec? {
         let name = repository.split(separator: "/").last.map(String.init) ?? repository
-        let folder = "~/models/" + name.lowercased()
         switch layout {
         case .package:
             // The only package format the engine loads is Qwen3.8-Flash-Next's.
-            return ModelSpec(repository: repository, folder: folder, title: name, kind: .package)
+            return ModelSpec(repository: repository, title: name, kind: .package)
         case .gguf(_, let hasMTP):
-            return ModelSpec(repository: repository, folder: folder, title: name,
+            return ModelSpec(repository: repository, title: name,
                              extraFiles: hasMTP ? [] : [ModelSpec.mtpDraftHead], kind: .gguf)
         case .unsupported:
             return nil

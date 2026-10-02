@@ -1,19 +1,18 @@
 import AppKit
 import SlipstreamMenubarCore
 
-/// Downloads the model with `hf download <repo> --local-dir <folder>`, installing `hf`
-/// with Homebrew (and Homebrew itself, if the user agrees) first.
+/// Downloads the model with `slipstream pull <repo>` into Slipstream's model store, where
+/// `slipstream serve --model <repo>` finds it. Slipstream downloads with the
+/// `huggingface_hub` it ships, and fetches the MTP draft head a GGUF repository lacks.
 ///
-/// `hf` prints no machine-readable progress (`--format json` reports only the final
-/// path), so progress is measured instead: the total comes from the Hub's file
-/// listing, and the bytes so far from the folder, where hf keeps partial files in
-/// `.cache/huggingface/download/*.incomplete`.
+/// `pull` prints no machine-readable progress, so progress is measured instead: the total
+/// comes from the Hub's file listing, and the bytes so far from the model's folder, where
+/// partial files sit in `.cache/huggingface/download/*.incomplete` (a package's files go to
+/// the Hub cache, which is measured too).
 @MainActor
 final class ModelDownloader: ObservableObject {
     enum Phase: Equatable {
         case idle
-        case waitingForHomebrew
-        case installingHF(String)
         case preparing
         case downloading(received: Int64, total: Int64, bytesPerSecond: Double?, secondsLeft: TimeInterval?)
         case stopping
@@ -23,7 +22,7 @@ final class ModelDownloader: ObservableObject {
 
         var isRunning: Bool {
             switch self {
-            case .waitingForHomebrew, .installingHF, .preparing, .downloading, .stopping: return true
+            case .preparing, .downloading, .stopping: return true
             default: return false
             }
         }
@@ -31,30 +30,34 @@ final class ModelDownloader: ObservableObject {
 
     @Published private(set) var phase: Phase = .idle
     let model: ModelSpec
+    private let installation: SlipstreamInstallation
     private let searchPath: [String]
     private var process: Process?
     private var task: Task<Void, Never>?
     private var aborting = false
     private var stderrTail = ""
 
-    init(model: ModelSpec, searchPath: [String]) {
+    init(model: ModelSpec, installation: SlipstreamInstallation, searchPath: [String]) {
         self.model = model
+        self.installation = installation
         self.searchPath = searchPath
     }
+
+    /// The command the window shows: what a terminal user would run for the same result.
+    var command: String { "slipstream pull \(model.repository)" }
 
     struct DownloadError: LocalizedError {
         let message: String
         var errorDescription: String? { message }
     }
 
-    /// Runs the steps after the user's go-ahead: `hf` (via Homebrew), then the download.
+    /// Runs the download after the user's go-ahead.
     func run(onFinished: @escaping (Bool) -> Void) {
         guard !phase.isRunning else { return }
         aborting = false
         task = Task {
             do {
-                let hf = try await ensureHF()
-                try await download(with: hf)
+                try await download()
                 phase = .done
                 onFinished(true)
             } catch is CancellationError {
@@ -72,8 +75,8 @@ final class ModelDownloader: ObservableObject {
         aborting = true
         if let process, process.isRunning {
             phase = .stopping
-            process.interrupt()  // SIGINT: hf stops and leaves resumable partial files
-            // hf does not always stop on SIGINT alone (a transfer thread may hold it).
+            process.interrupt()  // SIGINT: pull stops and leaves resumable partial files
+            // Files already in transfer finish first, which can take a while; don't wait long.
             DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak process] in
                 if let process, process.isRunning { process.terminate() }
             }
@@ -84,7 +87,7 @@ final class ModelDownloader: ObservableObject {
         task?.cancel()
     }
 
-    /// Stops hf before the app quits, so no download is left running unseen.
+    /// Stops the download before the app quits, so none is left running unseen.
     func stopForQuit() {
         aborting = true
         task?.cancel()
@@ -98,43 +101,27 @@ final class ModelDownloader: ObservableObject {
         }
     }
 
+    /// The model's folder, and for a package the Hub cache its folder links to.
+    private var downloadFolders: [URL] {
+        model.kind == .package ? [model.folderURL, ModelStore.hubCacheFolder(for: model.repository)] : [model.folderURL]
+    }
+
     func deleteDownloadedFiles() throws {
-        if FileManager.default.fileExists(atPath: model.folderURL.path) {
-            try FileManager.default.removeItem(at: model.folderURL)
-        }
-    }
-
-    var downloadedBytes: Int64 { ModelPresence.allocatedSize(of: model.folderURL) }
-
-    // MARK: hf
-
-    /// hf from Homebrew or PATH; installs it with `brew install hf` when missing. A
-    /// missing Homebrew is installed in Terminal by the caller beforehand.
-    private func ensureHF() async throws -> URL {
-        if let hf = Homebrew.hf(searchPath: searchPath) { return hf }
-        guard let brew = Homebrew.brew() else {
-            phase = .waitingForHomebrew
-            while Homebrew.brew() == nil {
-                try await Task.sleep(for: .seconds(2))
+        for folder in downloadFolders {
+            // attributesOfItem, not fileExists: a package's folder is a link, possibly dangling.
+            if (try? FileManager.default.attributesOfItem(atPath: folder.path)) != nil {
+                try FileManager.default.removeItem(at: folder)
             }
-            return try await ensureHF()
         }
-        phase = .installingHF("brew install hf")
-        let status = try await run(brew, ["install", "hf"]) { [weak self] line in
-            self?.phase = .installingHF(line)
-        }
-        guard status == 0, let hf = Homebrew.hf(searchPath: searchPath) else {
-            throw DownloadError(message: "`brew install hf` failed (exit \(status)). \(stderrTail)")
-        }
-        return hf
     }
+
+    var downloadedBytes: Int64 { downloadFolders.map(ModelPresence.allocatedSize(of:)).reduce(0, +) }
 
     // MARK: Download
 
-    private func download(with hf: URL) async throws {
+    private func download() async throws {
         phase = .preparing
         let total = try await totalSize()
-        try FileManager.default.createDirectory(at: model.folderURL, withIntermediateDirectories: true)
 
         var estimator = TransferEstimator()
         let monitor = Task { [weak self] in
@@ -151,17 +138,12 @@ final class ModelDownloader: ObservableObject {
             }
         }
         defer { monitor.cancel() }
-        // The model, then single files from other repositories (the MTP draft head),
-        // all into the same folder.
-        var commands = [["download", model.repository, "--local-dir", model.folderURL.path]]
-        commands += model.extraFiles.map { ["download", $0.repository, $0.path, "--local-dir", model.folderURL.path] }
-        for arguments in commands {
-            let status = try await run(hf, arguments)
-            if aborting { throw CancellationError() }
-            guard status == 0 else {
-                throw DownloadError(message: "hf \(arguments.prefix(3).joined(separator: " ")) failed "
-                                    + "(exit \(status)). \(stderrTail)")
-            }
+        // A checkout's launcher sets up its Python environment first, from its own folder.
+        let status = try await run(installation.launcher, ["pull", model.repository],
+                                   directory: installation.root)
+        if aborting { throw CancellationError() }
+        guard status == 0 else {
+            throw DownloadError(message: "\(command) failed (exit \(status)). \(stderrTail)")
         }
     }
 
@@ -190,15 +172,15 @@ final class ModelDownloader: ObservableObject {
     // MARK: Processes
 
     /// Runs a command to completion, reporting the last line it printed. Cancellable.
-    private func run(_ executable: URL, _ arguments: [String],
+    private func run(_ executable: URL, _ arguments: [String], directory: URL,
                      onLine: ((String) -> Void)? = nil) async throws -> Int32 {
         let process = Process()
         process.executableURL = executable
         process.arguments = arguments
+        process.currentDirectoryURL = directory
         var environment = ProcessInfo.processInfo.environment
         environment["PATH"] = (["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"]
                                + searchPath).joined(separator: ":")
-        environment["HOMEBREW_NO_AUTO_UPDATE"] = "1"
         process.environment = environment
         process.standardInput = FileHandle.nullDevice
         let output = Pipe()
@@ -228,26 +210,5 @@ final class ModelDownloader: ObservableObject {
         } onCancel: {
             if process.isRunning { process.interrupt() }
         }
-    }
-
-    // MARK: Homebrew
-
-    /// Opens Terminal with Homebrew's official installer: it asks for a password and a
-    /// confirmation, which only a terminal can answer. `run` then waits for `brew`.
-    static func openHomebrewInstaller() throws {
-        let script = FileManager.default.temporaryDirectory.appendingPathComponent("install-homebrew.command")
-        let body = """
-        #!/bin/bash
-        echo "Installing Homebrew for Slipstream Menubar, with Homebrew's official installer:"
-        echo
-        echo '  \(Homebrew.installCommand)'
-        echo
-        \(Homebrew.installCommand)
-        echo
-        echo "Done. You can close this window; Slipstream Menubar continues on its own."
-        """
-        try body.write(to: script, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
-        NSWorkspace.shared.open(script)
     }
 }

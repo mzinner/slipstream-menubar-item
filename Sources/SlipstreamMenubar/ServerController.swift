@@ -290,8 +290,10 @@ final class ServerController: ObservableObject {
     /// Whether the running server serves the model in this folder.
     func isServing(folder: URL) -> Bool {
         guard status.isActive, let model else { return false }
-        let path = URL(fileURLWithPath: (model as NSString).expandingTildeInPath).standardizedFileURL.path
-        return path == folder.standardizedFileURL.path
+        // A model served by its Hub id lives in the model store.
+        let local = model.hasPrefix("/") || model.hasPrefix("~") || model.hasPrefix(".")
+        let served = local ? URL(fileURLWithPath: (model as NSString).expandingTildeInPath) : ModelStore.folder(for: model)
+        return served.standardizedFileURL.path == folder.standardizedFileURL.path
     }
 
     func forceStop() {

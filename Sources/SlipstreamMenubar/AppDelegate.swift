@@ -30,6 +30,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updater = AppUpdateWindowController(updater: AppUpdater())
         modelWindow = ModelWindowController(
             searchPath: { [weak self] in self?.server.searchPath ?? [] },
+            installation: { [weak self] in self?.server.installation },
+            installSlipstream: { [weak self] in self?.installer.show() },
             models: { [weak self] in self?.server.config.availableModels ?? ModelSpec.catalog },
             addModel: { [weak self] model in self?.addCustomModel(model) },
             onDownloaded: { [weak self] model in self?.useDownloadedModel(model) },
@@ -203,10 +205,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.update()
     }
 
-    /// A finished download becomes the configured model.
+    /// A finished download becomes the configured model, by its Hub id: the launcher finds
+    /// it in the model store.
     private func useDownloadedModel(_ model: ModelSpec) {
         var config = server.config
-        config.model = model.folder
+        config.model = model.repository
         saveConfig(config)
     }
 

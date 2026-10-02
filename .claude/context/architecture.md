@@ -113,26 +113,33 @@ Part of the project context; see [the index](../PROJECT_CONTEXT.md).
   - So New Model… rejects GGUF variants in sub-folders and anything over 150 GB.
 - **Model download** (`ModelSetup.swift`, `ModelDownloader`, `ModelWindow`): "Download Model…"
   shows while `config.model` is missing (`ModelPresence`).
-  - **Model:** `ModelSpec.swiftQwen38FlashNext`, the user's choice and the README's command:
-    `hf download nitinpanj/Swift-Qwen3.8-Flash-Next-Q4_0-Q8out-v3-GGUF --local-dir
-    ~/models/swift-qwen38-flash-next-v3`. Its repository has no `MTP/` folder, so the app also
-    fetches `hf download nitinpanj/qwen38-flash-next-v3 MTP/mtp-shared-Q4_K_M.gguf` (1.9 GB) into
-    the same folder (`ModelSpec.extraFiles`), and the totals include it. Without it the engine runs
-    with no MTP head (loaded only if `mtp-layer.bin` and `mtp-combiner.bin` exist): one token per
-    step. The converter's `Warning: no MTP draft head` line is shown in the panel
-    (`LogProgress.missingMTPDraftHead`).
-  - **Order of checks:** RAM ≥ 64 GB (warn), `hf` (`brew install hf`; without brew, ask, then
-    open Terminal with the official installer in a `.command` file and poll for `brew`), disk
+  - **Model:** `ModelSpec.swiftQwen38FlashNext`, the user's choice. The download is
+    `slipstream pull <repo>` (the installation's launcher; a checkout sets up its venv first),
+    since Slipstream ships `huggingface_hub` itself: no Homebrew or `hf` any more. It downloads
+    into the model store `ModelStore.root` (`~/.slipstream/models`, or `SLIPSTREAM_MODELS`),
+    `<root>/<owner>/<repo>`, the folder `serve --model <repo>` uses too, so the CLI and the app
+    share one copy. `ModelSpec.folder` is derived from the repository, not stored (older settings'
+    `~/models/<name>` folders are ignored for catalog models; a configured folder still serves).
+  - **MTP head:** the Swift repository has no `MTP/` folder; `pull` fetches
+    `nitinpanj/qwen38-flash-next-v3`'s `MTP/mtp-shared-Q4_K_M.gguf` (1.9 GB, pinned revision) into
+    the model's folder. `ModelSpec.extraFiles` only adds it to the totals. Without it the engine
+    runs with no MTP head: one token per step, measured 20 vs 42 tok/s on Swift V3.
+  - **Done or not:** `pull` writes `.slipstream-gguf.json` before downloading and sets
+    `"downloaded": true` at the end (`ModelStore.isDownloaded`, also true once `prepared/` exists).
+    `ModelPresence.isAvailable(<hub id>)` is that, so "Download Model…" shows until a pull finished.
+  - **Order of checks:** RAM ≥ 64 GB (warn), a Slipstream with `pull`
+    (`SlipstreamInstallation.supportsPull`; else offer Install/Update Slipstream), disk
     (`DiskCheck`: block unless ≥ 10 GB stay free after the download, the user's rule; warn if the
     ~same-size prepared copy won't fit).
-  - **Progress:** `hf --format json` has no progress (dry run: file list with rounded sizes;
-    download: the final path only). So the total comes from the Hub tree API and the bytes from
-    the allocated size of the folder (partials are `.cache/huggingface/download/*.incomplete`).
-    `TransferEstimator` uses a 20 s window. Measured here: 21 → 53 MB/s, ETA ~32 min for 102.6 GB.
-  - **Abort:** SIGINT, then SIGTERM at 5 s, SIGKILL at 10 s (hf ignored SIGINT once). Then ask
-    whether to delete the files or keep them (hf resumes). Quit during a download asks and stops
-    hf (`applicationShouldTerminate`).
-  - **When done:** set `config.model`; on ≥ 64 GB ask to start the server, else point to Settings.
+  - **Progress:** `pull` prints no machine-readable progress. So the total comes from the Hub tree
+    API and the bytes from the allocated size of the folder (partials are
+    `.cache/huggingface/download/*.incomplete`; a package's files go to the Hub cache, measured too).
+    `TransferEstimator` uses a 20 s window.
+  - **Abort:** SIGINT (the launcher `exec`s the download, so it gets it), then SIGTERM at 5 s,
+    SIGKILL at 10 s: files already in transfer finish first, which took 21 s in a test. Then ask
+    whether to delete the files or keep them (the next pull resumes at the same commit). Quit
+    during a download asks and stops it (`applicationShouldTerminate`).
+  - **When done:** set `config.model` to the Hub id; on ≥ 64 GB ask to start the server, else point to Settings.
 - **GPU wired limit:** before every start on a 64 GB Mac (`MachineCheck.needsGPULimitRaise`: 64…95
   GB), if `raiseGPULimit` and `iogpu.wired_limit_mb` ≠ `gpuWiredLimitMB` (59392), run
   `/usr/sbin/sysctl iogpu.wired_limit_mb=…` through `NSAppleScript … with administrator
@@ -147,8 +154,9 @@ Part of the project context; see [the index](../PROJECT_CONTEXT.md).
 - **First-start preparation:** for a server the app started, the log's 53 `[DONE]` lines drive a
   progress bar in the panel header, with an ETA from the pace so far
   (`preparationSecondsLeft`). The panel opens by itself when preparation begins.
-- **Dev aids:** `--download-model`; `SLIPSTREAM_MENUBAR_MODEL_REPO`/`_MODEL_DIR` (e.g.
-  `hf-internal-testing/tiny-random-gpt2`, 12.5 MB) and `SLIPSTREAM_MENUBAR_LOG` (for staging a
+- **Dev aids:** `--download-model`, `--download <repo>`; `SLIPSTREAM_MENUBAR_MODEL_REPO` with
+  `SLIPSTREAM_MODELS=<scratch>` (e.g. `QuantFactory/SmolLM-360M-GGUF`, which pull accepts as GGUF;
+  it is not Flash-Next, so only the download is meaningful) and `SLIPSTREAM_MENUBAR_LOG` (for staging a
   preparation with `fake-server.py --lock-repo … --outage 0 100000`, a fake checkout repo,
   `useCheckout` and `defaults write SlipstreamMenubar spawnedServerPid -int <pid>`).
 - **Installer** (`ReleaseInstaller` + `InstallWindow`):

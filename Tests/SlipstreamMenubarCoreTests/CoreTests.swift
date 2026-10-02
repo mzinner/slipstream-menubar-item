@@ -264,6 +264,9 @@ final class NetworkAccessTests: XCTestCase {
         XCTAssertTrue(config.validationErrors(installation: checkout).contains { $0.contains("--host") })
         try Data(#"server.add_argument("--host", default="127.0.0.1")"#.utf8).write(to: launcher)
         XCTAssertTrue(checkout.supportsHost)
+        XCTAssertFalse(checkout.supportsPull)
+        try Data(#"puller = commands.add_parser("pull", help="download")"#.utf8).write(to: launcher)
+        XCTAssertTrue(checkout.supportsPull)
         config.listenOnNetwork = false
         XCTAssertFalse(config.validationErrors(installation: checkout).contains { $0.contains("--host") })
     }
@@ -454,7 +457,7 @@ final class ModelSetupTests: XCTestCase {
     func testTheDefaultModelIsTheReadmesSwiftVariant() {
         let model = ModelSpec.swiftQwen38FlashNext
         XCTAssertEqual(model.repository, "nitinpanj/Swift-Qwen3.8-Flash-Next-Q4_0-Q8out-v3-GGUF")
-        XCTAssertTrue(model.folderURL.path.hasSuffix("/models/swift-qwen38-flash-next-v3"))
+        XCTAssertEqual(model.folderURL, ModelStore.root.appendingPathComponent(model.repository))
     }
 
     func testModelPresence() throws {
@@ -466,8 +469,23 @@ final class ModelSetupTests: XCTestCase {
         XCTAssertFalse(ModelPresence.isAvailable(folder.path), "empty folder")
         try Data("x".utf8).write(to: folder.appendingPathComponent("model-00001-of-00003.gguf"))
         XCTAssertTrue(ModelPresence.isAvailable(folder.path))
-        XCTAssertTrue(ModelPresence.isAvailable("owner/repo"), "Hub ids are fetched by the launcher")
         XCTAssertGreaterThan(ModelPresence.allocatedSize(of: folder), 0)
+    }
+
+    func testHubIDsAreAvailableOnceTheirPullFinished() throws {
+        let store = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        setenv("SLIPSTREAM_MODELS", store.path, 1)
+        defer { unsetenv("SLIPSTREAM_MODELS"); try? FileManager.default.removeItem(at: store) }
+        XCTAssertEqual(ModelStore.folder(for: "owner/repo"), store.appendingPathComponent("owner/repo"))
+        XCTAssertFalse(ModelPresence.isAvailable("owner/repo"), "not downloaded")
+        let folder = ModelStore.folder(for: "owner/repo")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let marker = folder.appendingPathComponent(ModelStore.markerName)
+        try Data(#"{"model": "owner/repo", "revision": "abc"}"#.utf8).write(to: marker)
+        XCTAssertFalse(ModelPresence.isAvailable("owner/repo"), "a pull still running or stopped")
+        try Data(#"{"model": "owner/repo", "revision": "abc", "downloaded": true}"#.utf8).write(to: marker)
+        XCTAssertTrue(ModelPresence.isAvailable("owner/repo"))
+        XCTAssertTrue(ModelStore.isDownloaded("owner/repo"))
     }
 
     func testOnly64GBMacsRaiseTheGPULimit() {
@@ -564,12 +582,16 @@ final class ModelCatalogTests: XCTestCase {
             "nitinpanj/Swift-Qwen3.8-Flash-Next-Q4_0-Q8out-v3-GGUF", "nitinpanj/qwen38-flash-next-v3",
         ], "the engine loads only Qwen3.8-Flash-Next")
         XCTAssertEqual(ModelSpec.qwen38FlashNext.memoryNote, "64 GB Mac")
-        XCTAssertEqual(ModelSpec(repository: "a/b", folder: "~/m", title: "b", minimumMemoryGiB: 36,
+        XCTAssertEqual(ModelSpec(repository: "a/b", title: "b", minimumMemoryGiB: 36,
                                  recommendedMemoryGiB: 48).memoryNote, "36 GB Mac, 48 GB recommended")
         XCTAssertTrue(ModelSpec.qwen38FlashNext.extraFiles.isEmpty, "the base model ships its MTP head")
-        XCTAssertEqual(ModelSpec.matching(path: "~/models/qwen38-flash-next-v3", in: ModelSpec.catalog)?.title,
+        XCTAssertEqual(ModelSpec.matching(model: "nitinpanj/qwen38-flash-next-v3", in: ModelSpec.catalog)?.title,
                        "Qwen3.8-Flash-Next V3")
-        XCTAssertNil(ModelSpec.matching(path: "/elsewhere", in: ModelSpec.catalog))
+        XCTAssertEqual(ModelSpec.matching(model: ModelSpec.qwen38FlashNext.folder, in: ModelSpec.catalog)?.title,
+                       "Qwen3.8-Flash-Next V3", "its folder in the model store")
+        XCTAssertNil(ModelSpec.matching(model: "~/models/qwen38-flash-next-v3", in: ModelSpec.catalog),
+                     "a folder outside the store is a custom model")
+        XCTAssertNil(ModelSpec.matching(model: "/elsewhere", in: ModelSpec.catalog))
     }
 
     func testRecognisesPackagesAndGGUFRepositories() {
@@ -620,7 +642,7 @@ final class ModelCatalogTests: XCTestCase {
     func testSpecsForNewModels() {
         let package = ModelCheck.spec(repository: "someone/Thing-Splash", layout: .package)
         XCTAssertEqual(package?.kind, .package)
-        XCTAssertEqual(package?.folder, "~/models/thing-splash")
+        XCTAssertEqual(package?.folderURL, ModelStore.folder(for: "someone/Thing-Splash"))
         XCTAssertEqual(package?.minimumMemoryGiB, 64, "the only loadable package is Flash-Next")
         let gguf = ModelCheck.spec(repository: "someone/Flash-GGUF", layout: .gguf(firstShard: "a.gguf", hasMTP: false))
         XCTAssertEqual(gguf?.extraFiles, [ModelSpec.mtpDraftHead], "a GGUF without its own MTP head gets the shared one")
@@ -629,12 +651,23 @@ final class ModelCatalogTests: XCTestCase {
 
     func testCustomModelsAreStoredAndListedOnce() throws {
         var config = ServerConfig()
-        config.customModels = [ModelSpec(repository: "someone/Thing-Splash", folder: "~/models/thing", title: "Thing",
+        config.customModels = [ModelSpec(repository: "someone/Thing-Splash", title: "Thing",
                                          kind: .package, minimumMemoryGiB: 36, recommendedMemoryGiB: 48),
                                ModelSpec.qwen38FlashNext]
         let decoded = try JSONDecoder().decode(ServerConfig.self, from: JSONEncoder().encode(config))
         XCTAssertEqual(decoded.customModels.first?.repository, "someone/Thing-Splash")
         XCTAssertEqual(decoded.availableModels.count, ModelSpec.catalog.count + 1, "a catalog model is not repeated")
+    }
+
+    func testOlderSettingsWithModelFoldersStillLoad() throws {
+        let json: String = #"{"model": "~/models/thing", "customModels": [{"repository": "someone/Thing", "#
+            + #""folder": "~/models/thing", "title": "Thing", "extraFiles": [], "kind": "gguf", "#
+            + #""minimumMemoryGiB": 64, "recommendedMemoryGiB": 64}]}"#
+        let saved = Data(json.utf8)
+        let config = try JSONDecoder().decode(ServerConfig.self, from: saved)
+        XCTAssertEqual(config.model, "~/models/thing", "a configured folder is kept and served as a folder")
+        XCTAssertEqual(config.customModels.first?.folderURL, ModelStore.folder(for: "someone/Thing"),
+                       "a custom model now lives in the store")
     }
 
     func testPackagesNeedNoRoomForAPreparedCopy() {
@@ -651,23 +684,25 @@ final class CleanupTests: XCTestCase {
     override func setUpWithError() throws {
         root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        setenv("SLIPSTREAM_MODELS", root.path, 1)
     }
 
     override func tearDownWithError() throws {
+        unsetenv("SLIPSTREAM_MODELS")
         try? FileManager.default.removeItem(at: root)
     }
 
     private func model(_ name: String, holdsModel: Bool) throws -> ModelSpec {
-        let folder = root.appendingPathComponent(name)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        if holdsModel { try Data("x".utf8).write(to: folder.appendingPathComponent("m-00001-of-00001.gguf")) }
-        return ModelSpec(repository: "test/\(name)", folder: folder.path, title: name)
+        let spec = ModelSpec(repository: "test/\(name)", title: name)
+        try FileManager.default.createDirectory(at: spec.folderURL, withIntermediateDirectories: true)
+        if holdsModel { try Data("x".utf8).write(to: spec.folderURL.appendingPathComponent("m-00001-of-00001.gguf")) }
+        return spec
     }
 
     func testListsOnlyFoldersThatHoldAModelOnce() throws {
         let present = try model("present", holdsModel: true)
         let empty = try model("empty", holdsModel: false)
-        let items = Cleanup.modelItems(models: [present, empty, present], configuredModel: present.folder)
+        let items = Cleanup.modelItems(models: [present, empty, present], configuredModel: present.folderURL.path)
         XCTAssertEqual(items.map(\.title), ["present"], "no empty folder, no duplicate")
         XCTAssertTrue(items[0].isModel)
         XCTAssertTrue(Cleanup.modelItems(models: [], configuredModel: "owner/repo").isEmpty, "a Hub id is no folder")
@@ -678,8 +713,8 @@ final class CleanupTests: XCTestCase {
         let drop = try model("drop", holdsModel: true)
         let item = try XCTUnwrap(Cleanup.modelItems(models: [drop], configuredModel: "").first)
         try Cleanup.remove(item)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: drop.folder))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: keep.folder))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: drop.folderURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: keep.folderURL.path))
     }
 
     func testTheAppBundleIsNeverDeletedDirectly() throws {

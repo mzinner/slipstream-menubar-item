@@ -330,13 +330,13 @@ private struct ModelChoice: View {
         Binding(
             get: {
                 if customOpen { return .custom }
-                return ModelSpec.matching(path: model, in: models).map { .model($0.repository) } ?? .custom
+                return ModelSpec.matching(model: model, in: models).map { .model($0.repository) } ?? .custom
             },
             set: { choice in
                 switch choice {
                 case .model(let repository):
                     customOpen = false
-                    if let spec = models.first(where: { $0.repository == repository }) { model = spec.folder }
+                    if let spec = models.first(where: { $0.repository == repository }) { model = spec.repository }
                 case .custom:
                     customOpen = true
                 case .new:
@@ -346,7 +346,7 @@ private struct ModelChoice: View {
     }
 
     var body: some View {
-        let current = ModelSpec.matching(path: model, in: models)
+        let current = ModelSpec.matching(model: model, in: models)
         Picker("Model", selection: selection) {
             ForEach(models, id: \.repository) { spec in
                 Text("\(spec.title) (\(spec.memoryNote))").tag(Choice.model(spec.repository))
@@ -359,7 +359,7 @@ private struct ModelChoice: View {
             HStack {
                 Text(current.folder).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                 Spacer()
-                if ModelPresence.isAvailable(current.folder) {
+                if ModelPresence.isAvailable(current.repository) {
                     Label("Downloaded", systemImage: "checkmark").font(.caption).foregroundStyle(.secondary)
                 } else {
                     Text("Not downloaded").font(.caption).foregroundStyle(.orange)
@@ -372,13 +372,20 @@ private struct ModelChoice: View {
             }
         } else {
             PathField(label: "Folder or Hub id", path: $model, directoriesOnly: true,
-                      help: "A folder with GGUF files or a Slipstream package, or the Hugging Face id of a "
-                          + "ready-to-run Slipstream package, which the server downloads on its first start")
+                      help: "A folder with GGUF files or a Slipstream package, or a Hugging Face id, which "
+                          + "the server downloads into \(ModelStore.root.path) on its first start")
             if !ModelPresence.isAvailable(model) {
-                Text("No model at this location.").font(.caption).foregroundStyle(.orange)
+                Text(isHubID(model) ? "Not downloaded yet: the server downloads it on its first start."
+                                    : "No model at this location.")
+                    .font(.caption).foregroundStyle(.orange)
             }
         }
     }
+}
+
+private func isHubID(_ model: String) -> Bool {
+    let trimmed = model.trimmingCharacters(in: .whitespaces)
+    return !trimmed.hasPrefix("/") && !trimmed.hasPrefix("~") && !trimmed.hasPrefix(".") && trimmed.contains("/")
 }
 
 /// The downloaded models, each with its size and a Delete button.

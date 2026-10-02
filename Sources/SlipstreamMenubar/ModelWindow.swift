@@ -10,6 +10,10 @@ final class ModelWindowController: NSObject, NSWindowDelegate {
     private var downloader: ModelDownloader?
     private var picker: ModelPicker?
     private let searchPath: () -> [String]
+    /// The Slipstream whose `pull` downloads the model.
+    private let installation: () -> SlipstreamInstallation?
+    /// "Install Slipstream…", which also updates an installed one.
+    private let installSlipstream: () -> Void
     /// The catalog plus models added with New Model…
     private let models: () -> [ModelSpec]
     private let addModel: (ModelSpec) -> Void
@@ -18,10 +22,13 @@ final class ModelWindowController: NSObject, NSWindowDelegate {
     private let startServer: () -> Void
     private let openSettings: () -> Void
 
-    init(searchPath: @escaping () -> [String], models: @escaping () -> [ModelSpec],
+    init(searchPath: @escaping () -> [String], installation: @escaping () -> SlipstreamInstallation?,
+         installSlipstream: @escaping () -> Void, models: @escaping () -> [ModelSpec],
          addModel: @escaping (ModelSpec) -> Void, onDownloaded: @escaping (ModelSpec) -> Void,
          startServer: @escaping () -> Void, openSettings: @escaping () -> Void) {
         self.searchPath = searchPath
+        self.installation = installation
+        self.installSlipstream = installSlipstream
         self.models = models
         self.addModel = addModel
         self.onDownloaded = onDownloaded
@@ -69,25 +76,28 @@ final class ModelWindowController: NSObject, NSWindowDelegate {
                              buttons: ["Download", "Cancel"], style: .informational)
             guard answer == .alertFirstButtonReturn else { return }
         }
-        // 2. hf, and Homebrew to install it.
-        let paths = searchPath()
-        if Homebrew.hf(searchPath: paths) == nil, Homebrew.brew() == nil {
-            let answer = ask("Install Homebrew?",
-                             "The model is downloaded with Hugging Face's `hf` tool, which is installed with "
-                             + "Homebrew, and Homebrew is not installed. Install it now with its official "
-                             + "installer? It opens in Terminal and asks for your password:\n\n"
-                             + Homebrew.installCommand,
-                             buttons: ["Install Homebrew", "Cancel"], style: .informational)
-            guard answer == .alertFirstButtonReturn else { return }
-            do {
-                try ModelDownloader.openHomebrewInstaller()
-            } catch {
-                ask("Could not start the Homebrew installer", error.localizedDescription, buttons: ["OK"])
-                return
-            }
+        // 2. Slipstream, whose `pull` downloads it.
+        guard let installation = installation() else {
+            let answer = ask("Install Slipstream first",
+                             "Models are downloaded by Slipstream itself, into "
+                             + "\(ModelStore.folder(for: model.repository).deletingLastPathComponent().path), "
+                             + "where its server finds them. Slipstream is not installed yet.",
+                             buttons: ["Install Slipstream…", "Cancel"], style: .informational)
+            if answer == .alertFirstButtonReturn { installSlipstream() }
+            return
+        }
+        guard installation.supportsPull else {
+            let answer = ask("Update Slipstream first",
+                             "This \(installation.displayName) cannot download models yet: that needs a "
+                             + "Slipstream with `slipstream pull`."
+                             + (installation.kind == .checkout ? " Update the checkout in \(installation.root.path)." : ""),
+                             buttons: installation.kind == .release ? ["Update Slipstream…", "Cancel"] : ["OK"],
+                             style: .informational)
+            if installation.kind == .release, answer == .alertFirstButtonReturn { installSlipstream() }
+            return
         }
         // 3. Disk, then the download.
-        let downloader = ModelDownloader(model: model, searchPath: paths)
+        let downloader = ModelDownloader(model: model, installation: installation, searchPath: searchPath())
         self.downloader = downloader
         present(downloader)
         Task { await self.checkDiskAndRun(downloader) }
@@ -150,7 +160,7 @@ final class ModelWindowController: NSObject, NSWindowDelegate {
         window?.makeKeyAndOrderFront(nil)
     }
 
-    /// Abort: stop hf, then offer to delete what was downloaded or keep it to resume later.
+    /// Abort: stop the download, then offer to delete what was downloaded or keep it to resume later.
     private func confirmAbort() {
         guard let downloader, downloader.phase.isRunning else { return }
         let downloading: Bool
@@ -158,7 +168,7 @@ final class ModelWindowController: NSObject, NSWindowDelegate {
         downloader.abort()
         guard downloading || downloader.downloadedBytes > 0 else { return }
         Task {
-            try? await Task.sleep(for: .seconds(1))  // let hf exit before measuring
+            try? await Task.sleep(for: .seconds(1))  // let pull exit before measuring
             let size = downloader.downloadedBytes
             let answer = ask("Download stopped",
                              "Delete the \(bytes(size)) downloaded so far from \(downloader.model.folder)? "
@@ -199,7 +209,7 @@ final class ModelWindowController: NSObject, NSWindowDelegate {
 
     var isDownloading: Bool { downloader?.phase.isRunning ?? false }
 
-    /// Before quitting: confirm, then stop hf. Partial files stay for a later resume.
+    /// Before quitting: confirm, then stop the download. Partial files stay for a later resume.
     func confirmQuit() -> Bool {
         guard let downloader, downloader.phase.isRunning else { return true }
         let answer = ask("A model download is running",
@@ -244,25 +254,19 @@ private struct ModelDownloadView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(downloader.model.title).font(.headline)
-            Text("hf download \(downloader.model.repository) --local-dir \(downloader.model.folder)")
+            Text(downloader.command)
                 .font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
-            ForEach(downloader.model.extraFiles, id: \.path) { extra in
-                Text("hf download \(extra.repository) \(extra.path) --local-dir \(downloader.model.folder)")
-                    .font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            Text("Into \(downloader.model.folder)"
+                 + (downloader.model.extraFiles.isEmpty ? "" : ", with the MTP draft head from "
+                    + downloader.model.extraFiles.map(\.repository).joined(separator: ", ")))
+                .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
 
             switch downloader.phase {
             case .idle, .preparing:
                 ProgressView().progressViewStyle(.linear)
                 Text("Preparing the download…").font(.caption)
-            case .waitingForHomebrew:
-                ProgressView().progressViewStyle(.linear)
-                Text("Waiting for the Homebrew installer in Terminal to finish…").font(.caption)
-            case .installingHF(let line):
-                ProgressView().progressViewStyle(.linear)
-                Text("Installing hf with Homebrew: \(line)").font(.caption).lineLimit(2)
             case .downloading(let received, let total, let rate, let left):
                 ProgressView(value: Double(received), total: Double(max(total, 1)))
                 HStack {

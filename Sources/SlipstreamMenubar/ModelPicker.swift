@@ -163,7 +163,7 @@ private struct ModelRow: View {
     let choose: () -> Void
 
     var body: some View {
-        let present = ModelPresence.isAvailable(model.folder)
+        let present = ModelPresence.isAvailable(model.repository)
         let fits = MachineCheck.memoryGiB >= model.minimumMemoryGiB
         HStack(alignment: .center, spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {

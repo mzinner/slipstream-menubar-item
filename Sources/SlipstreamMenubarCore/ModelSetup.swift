@@ -1,9 +1,54 @@
 import Darwin
 import Foundation
 
-/// The model "Download Model…" installs: the Swift variant from Slipstream's README,
-/// `hf download nitinpanj/Swift-Qwen3.8-Flash-Next-Q4_0-Q8out-v3-GGUF --local-dir
-/// ~/models/swift-qwen38-flash-next-v3`.
+/// Slipstream's model store, shared with its command line: `slipstream pull <owner/repo>`
+/// and `slipstream serve --model <owner/repo>` keep each model in `<root>/<owner>/<repo>`,
+/// so a model is downloaded once whichever of them gets it first.
+public enum ModelStore {
+    /// What a GGUF download keeps next to the shards; `"downloaded": true` once it finished.
+    public static let markerName = ".slipstream-gguf.json"
+
+    /// `SLIPSTREAM_MODELS`, as Slipstream reads it, else `~/.slipstream/models`.
+    public static var root: URL {
+        if let value = getenv("SLIPSTREAM_MODELS").map({ String(cString: $0) }), !value.isEmpty {
+            return URL(fileURLWithPath: (value as NSString).expandingTildeInPath)
+        }
+        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".slipstream/models")
+    }
+
+    public static func folder(for repository: String) -> URL {
+        root.appendingPathComponent(repository)
+    }
+
+    /// Whether `slipstream pull` finished this model: a GGUF download says so in its marker
+    /// (or was already prepared), a package is a link to its verified Hub snapshot.
+    public static func isDownloaded(_ repository: String, fileManager: FileManager = .default) -> Bool {
+        let folder = folder(for: repository)
+        if let data = fileManager.contents(atPath: folder.appendingPathComponent(markerName).path),
+           let marker = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           marker["downloaded"] as? Bool == true { return true }
+        return fileManager.fileExists(atPath: folder.appendingPathComponent("prepared/manifest.json").path)
+            || fileManager.fileExists(atPath: folder.appendingPathComponent("manifest.json").path)
+    }
+
+    /// Where `huggingface_hub` caches a repository: a package's files land there, and its
+    /// store folder only links to them.
+    public static func hubCacheFolder(for repository: String) -> URL {
+        let environment = ProcessInfo.processInfo.environment
+        let hub: URL
+        if let cache = environment["HF_HUB_CACHE"], !cache.isEmpty {
+            hub = URL(fileURLWithPath: (cache as NSString).expandingTildeInPath)
+        } else if let home = environment["HF_HOME"], !home.isEmpty {
+            hub = URL(fileURLWithPath: (home as NSString).expandingTildeInPath).appendingPathComponent("hub")
+        } else {
+            hub = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".cache/huggingface/hub")
+        }
+        return hub.appendingPathComponent("models--" + repository.replacingOccurrences(of: "/", with: "--"))
+    }
+}
+
+/// A model the app offers. "Download Model…" gets it with `slipstream pull <repository>`
+/// into the model store, and Settings then serves it by its Hub id.
 public struct ModelSpec: Codable, Equatable, Sendable {
     /// What the download is, which decides how the server gets it ready.
     public enum Kind: String, Codable, Sendable {
@@ -24,7 +69,6 @@ public struct ModelSpec: Codable, Equatable, Sendable {
     }
 
     public var repository: String
-    public var folder: String
     public var title: String
     public var extraFiles: [ExtraFile] = []
     public var kind: Kind = .gguf
@@ -34,20 +78,19 @@ public struct ModelSpec: Codable, Equatable, Sendable {
     public var recommendedMemoryGiB: Int = 64
 
     /// The MTP draft head (speculative decoding) is only in the base model's repository;
-    /// the converter looks for it in the model's own `MTP/` folder.
+    /// `slipstream pull` fetches it into the model's `MTP/` folder for a repository without
+    /// one. Listed here for the download's size.
     public static let mtpDraftHead = ExtraFile(repository: "nitinpanj/qwen38-flash-next-v3",
                                                path: "MTP/mtp-shared-Q4_K_M.gguf")
 
     public static let swiftQwen38FlashNext = ModelSpec(
         repository: "nitinpanj/Swift-Qwen3.8-Flash-Next-Q4_0-Q8out-v3-GGUF",
-        folder: "~/models/swift-qwen38-flash-next-v3",
         title: "Swift-Qwen3.8-Flash-Next V3",
         extraFiles: [mtpDraftHead])
 
     /// The README's alternative: the dense base model, which ships its MTP head.
     public static let qwen38FlashNext = ModelSpec(
         repository: "nitinpanj/qwen38-flash-next-v3",
-        folder: "~/models/qwen38-flash-next-v3",
         title: "Qwen3.8-Flash-Next V3")
 
     /// The models the app offers. The Slipstream v2 engine loads only Qwen3.8-Flash-Next
@@ -56,16 +99,16 @@ public struct ModelSpec: Codable, Equatable, Sendable {
     /// lists (inherited from Splash 1.0) fail with "unsupported weight format".
     public static let catalog: [ModelSpec] = [swiftQwen38FlashNext, qwen38FlashNext]
 
-    /// The catalog or custom model whose folder is `path`, if any.
-    public static func matching(path: String, in models: [ModelSpec]) -> ModelSpec? {
-        let target = (path as NSString).expandingTildeInPath
-        return models.first { $0.folderURL.path == target }
+    /// The catalog or custom model a configured model names: its Hub id, or its folder.
+    public static func matching(model: String, in models: [ModelSpec]) -> ModelSpec? {
+        let trimmed = model.trimmingCharacters(in: .whitespaces)
+        let path = URL(fileURLWithPath: (trimmed as NSString).expandingTildeInPath).standardizedFileURL.path
+        return models.first { $0.repository == trimmed || $0.folderURL.standardizedFileURL.path == path }
     }
 
-    public init(repository: String, folder: String, title: String, extraFiles: [ExtraFile] = [],
+    public init(repository: String, title: String, extraFiles: [ExtraFile] = [],
                 kind: Kind = .gguf, minimumMemoryGiB: Int = 64, recommendedMemoryGiB: Int = 64) {
         self.repository = repository
-        self.folder = folder
         self.title = title
         self.extraFiles = extraFiles
         self.kind = kind
@@ -80,8 +123,8 @@ public struct ModelSpec: Codable, Equatable, Sendable {
             : "\(minimumMemoryGiB) GB Mac, \(recommendedMemoryGiB) GB recommended"
     }
 
-    /// `SLIPSTREAM_MENUBAR_MODEL_REPO` / `_MODEL_DIR` swap in a small repository to test
-    /// the download flow without fetching 100 GB.
+    /// `SLIPSTREAM_MENUBAR_MODEL_REPO` swaps in a small repository to test the download flow
+    /// without fetching 100 GB (`SLIPSTREAM_MODELS` keeps it out of the real store).
     public static var `default`: ModelSpec {
         let environment = ProcessInfo.processInfo.environment
         guard let repository = environment["SLIPSTREAM_MENUBAR_MODEL_REPO"], !repository.isEmpty else {
@@ -91,12 +134,15 @@ public struct ModelSpec: Codable, Equatable, Sendable {
         let extra = environment["SLIPSTREAM_MENUBAR_MODEL_EXTRA"]?.split(separator: ":", maxSplits: 1)
             .map(String.init)
         return ModelSpec(repository: repository,
-                         folder: environment["SLIPSTREAM_MENUBAR_MODEL_DIR"] ?? "~/models/test-model",
                          title: repository,
                          extraFiles: extra?.count == 2 ? [ExtraFile(repository: extra![0], path: extra![1])] : [])
     }
 
-    public var folderURL: URL { URL(fileURLWithPath: (folder as NSString).expandingTildeInPath) }
+    /// Where Slipstream keeps it. Not stored: settings saved by older versions name
+    /// `~/models/<name>` folders, which the command line does not look in.
+    public var folderURL: URL { ModelStore.folder(for: repository) }
+    /// `folderURL` for display, with `~`.
+    public var folder: String { (folderURL.path as NSString).abbreviatingWithTildeInPath }
     public var treeURL: URL? {
         URL(string: "https://huggingface.co/api/models/\(repository)/tree/main?recursive=true")
     }
@@ -119,16 +165,16 @@ public struct ModelSpec: Codable, Equatable, Sendable {
     }
 }
 
-/// Whether a configured model can be served as it is.
+/// Whether a configured model can be served without downloading it first.
 public enum ModelPresence {
-    /// True for a Hub repo id (the launcher downloads those itself), or a local folder
-    /// holding GGUF shards or a prepared package.
+    /// True for a Hub id that `slipstream pull` finished in the model store, or a local
+    /// folder holding GGUF shards or a prepared package.
     public static func isAvailable(_ model: String, fileManager: FileManager = .default) -> Bool {
         let trimmed = model.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return false }
         let path = (trimmed as NSString).expandingTildeInPath
         let local = trimmed.hasPrefix("/") || trimmed.hasPrefix("~") || trimmed.hasPrefix(".")
-        guard local else { return trimmed.contains("/") }
+        guard local else { return trimmed.contains("/") && ModelStore.isDownloaded(trimmed, fileManager: fileManager) }
         var isDirectory: ObjCBool = false
         guard fileManager.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue else { return false }
         if fileManager.fileExists(atPath: path + "/manifest.json")
@@ -192,25 +238,6 @@ public enum GPUMemoryLimit {
     /// The shell command that sets it; it needs administrator rights.
     public static func command(megabytes: Int) -> String {
         "/usr/sbin/sysctl \(sysctlName)=\(megabytes)"
-    }
-}
-
-/// Homebrew and the `hf` command it installs.
-public enum Homebrew {
-    public static let installCommand =
-        #"/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)""#
-
-    public static func brew(fileManager: FileManager = .default) -> URL? {
-        ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]
-            .first { fileManager.isExecutableFile(atPath: $0) }
-            .map(URL.init(fileURLWithPath:))
-    }
-
-    /// `hf` from Homebrew, or anywhere on the given PATH.
-    public static func hf(searchPath: [String] = [], fileManager: FileManager = .default) -> URL? {
-        (["/opt/homebrew/bin", "/usr/local/bin"] + searchPath)
-            .map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath).appendingPathComponent("hf") }
-            .first { fileManager.isExecutableFile(atPath: $0.path) }
     }
 }
 

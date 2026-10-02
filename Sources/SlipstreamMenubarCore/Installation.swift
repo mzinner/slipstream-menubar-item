@@ -33,6 +33,12 @@ public struct SlipstreamInstallation: Equatable, Sendable {
         return source?.contains("\"--host\"") ?? false
     }
 
+    /// Whether its launcher has `slipstream pull`, which "Download Model…" runs.
+    public var supportsPull: Bool {
+        let source = try? String(contentsOf: root.appendingPathComponent("install/launcher.py"), encoding: .utf8)
+        return source?.contains("\"pull\"") ?? false
+    }
+
     public var displayName: String {
         switch kind {
         case .release: return "Slipstream \(version ?? "release")"

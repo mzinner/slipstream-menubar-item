@@ -65,13 +65,18 @@ MIT); latest release v26.10.2.
   - Settings observe the server controller, so the version shown refreshes after an update.
   - App self-update: released 26.10.1 → 26.10.2 updated itself and relaunched (see
     architecture.md).
-  - 69 unit tests, plus the release workflow.
+  - Model downloads through `slipstream pull` into `~/.slipstream/models` (26.10.3): the release
+    binary downloaded a test repo plus the MTP head through the Download window and saved the Hub id.
+  - 71 unit tests, plus the release workflow.
 - **Released:** v26.10.0, v26.10.1 (has the update check but retries a failed check on every
-  poll), v26.10.2 (current; ad-hoc signed, not notarized; a browser download needs *Open Anyway*
-  or `xattr -dr com.apple.quarantine`, an in-app update does not).
-- **The user's running copy** (pid 2874 at checkpoint time) started from `build/` with code from
-  before the updater. `build/` now holds a 26.10.2 build; the user was told to quit and reopen it.
-  There is no copy in /Applications.
+  poll), v26.10.2, v26.10.3 (current: downloads via `slipstream pull`, needs Slipstream 26.10.3,
+  released first; ad-hoc signed, not notarized; a browser download needs *Open Anyway* or
+  `xattr -dr com.apple.quarantine`, an in-app update does not).
+- **This Mac:** Slipstream 26.10.3 installed in `~/.local` (26.10.2 kept). Both Flash-Next models
+  in `~/.slipstream/models/nitinpanj/`; the settings serve `nitinpanj/qwen38-flash-next-v3` (moved
+  from `~/models`, settings backed up beforehand). No server running at checkpoint time.
+- **The user's copy** was quit by the user during this session; it runs from `build/` (26.10.2
+  build) and will be offered 26.10.3 by its update check. There is no copy in /Applications.
 - **Not verified by Claude:** clicking Settings or the compact toggle in the live UI, Open at login
   (needs the app in /Applications), the bottom-fade behaviour in the live window, a real full
   uninstall (never run it on the user's Mac). Screenshots in the README were taken by the user.
@@ -93,22 +98,27 @@ MIT); latest release v26.10.2.
    Swift 6.2 breakage earlier.
 8. A stable signing identity (self-signed certificate in the release workflow, or a Developer
    ID) would stop macOS asking for Keychain access after each update. Offered, not decided.
-9. Fork: the launcher now refuses the Splash 1.0 packages (minimal version, finished
+9. Fork: `feat/gguf-hub-install` and `feat/slipstream-pull` are upstream-ready (see
+   slipstream.md); open them as PRs after #3/#4 merge. Slipstream's README still says
+   `hf download` + serve a folder; it could say `slipstream serve --model <owner/repo>` (the
+   author's text, left alone). `pull` does not check the GGUF architecture (New Model… does).
+10. Fork: the launcher now refuses the Splash 1.0 packages (minimal version, finished
    2026-10-02): `923c9fa` on `main`, and the same change alone on `fix/v2-only-packages`
    (`b2d9640`, on `upstream/main`) for a later PR. Pushed; released as fork v26.10.2. Left out on
    purpose: `ci.yml`'s model list, `dev/native.mk` vision fixtures, tests that use the old names as
    example ids, `DEVELOPMENT.md`, benchmarks.
-10. Suggested to the user: install the 26.10.2 dmg into /Applications (Open at login needs it,
+11. Suggested to the user: install the 26.10.3 dmg into /Applications (Open at login needs it,
    and updates then have a normal home).
-11. `target/draft-vocab.bin` is not produced by the GGUF path (optional; it would speed up the MTP
+12. `target/draft-vocab.bin` is not produced by the GGUF path (optional; it would speed up the MTP
    draft head). It is on the Hub in `nitinpanj/Swift-Qwen3.8-Flash-Next-Splash`.
 
 ## Gotchas / things not to repeat
 
 - `ImageRenderer` renders a `ScrollView` blank: snapshot `StatsContent`, not `StatsView`. Buttons
   render as yellow 🚫 placeholders in snapshots.
-- `screencapture` is not permitted from the terminal, and System Events can't click menus (no
-  Accessibility permission). Visual checks go through `--snapshot`. Ask the user to click.
+- System Events can't click menus (no Accessibility permission); ask the user to click.
+  `screencapture -x` works from the terminal now (2026-10-03); `-R x,y,w,h` takes points, not
+  pixels. `--snapshot` still renders the panel without screen access.
 - Rebuilding/relaunching kills background memory measurements, because they key on the app process.
 - `CFFIXED_USER_HOME` does not redirect the config; use `SLIPSTREAM_MENUBAR_CONFIG`. A test
   instance pointed at the real checkout follows its `serve.lock` to the real server: give fakes
@@ -134,18 +144,23 @@ MIT); latest release v26.10.2.
 - In zsh, `log` is a builtin (use `/usr/bin/log`), and `echo =====` fails (`=word` expansion).
   `Logger.info` is not kept in the log store; the updater logs at `notice`.
 - Swift traps on an inverted range (`8192...ram` on a runner with < 8 GB): compare instead.
+- A non-interactive shell starts `cmd &` with SIGINT ignored, so `kill -INT` on it tests nothing;
+  start the process from Python (`preexec_fn` restoring `SIG_DFL`), as `Process` does.
+- A long `"#…"# + "#…"#` raw-string concatenation inside `Data(...)` fails to type-check
+  ("no exact matches"); build the `String` first.
 
 ## Git state
 
 ```
 $ git status --short
  M .claude/PROJECT_CONTEXT.md
- M .claude/context/architecture.md
- M .claude/context/development.md
+ M .claude/context/slipstream.md
 $ git branch --show-current
 main
 ```
 
 At checkpoint time: only this checkpoint's context edits are uncommitted, and they are committed
-and pushed to both remotes right after. Code and tags up to v26.10.2 are pushed. The Slipstream
-fork's `main` and `fix/v2-only-packages` are pushed, and fork v26.10.2 is released.
+and pushed to both remotes right after. `main` and tag v26.10.3 are pushed to both remotes
+(`slipstream-pull` is merged into `main`). The Slipstream fork's `main` (`18815d8`), tag v26.10.3
+and the upstream-ready branches `feat/gguf-hub-install` and `feat/slipstream-pull` are pushed to
+`mzinner`.

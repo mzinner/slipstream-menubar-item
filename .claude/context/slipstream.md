@@ -11,6 +11,14 @@ Part of the project context; see [the index](../PROJECT_CONTEXT.md).
   subprocess. Then it `os.execve`s into `server/server.py` (same pid), which starts the engine
   (`build/slipstream-v2 serve-native`) as a child. The lock keeps its contents after exit.
   `--max-context`/`--max-memory` default to `auto` (256K context here).
+- **Hub ids (26.10.3+):** `serve --model <owner/repo>` and `pull <owner/repo>` run
+  `install/models.py prepare` into the model store (`~/.slipstream/models`, `SLIPSTREAM_MODELS`).
+  A GGUF repository becomes a real folder `<store>/<owner>/<repo>` with `.slipstream-gguf.json`
+  (`model`, pinned `revision`, `"downloaded": true` when complete), the shards, and
+  `MTP/mtp-shared-Q4_K_M.gguf` (from `nitinpanj/qwen38-flash-next-v3@e2982050…` when the repository
+  lacks it); `serve` then prepares `prepared/` there, and serves under the Hub id as model name. A
+  package stays a link into the Hub cache. `pull` `exec`s the download: SIGINT exits 130 after files
+  in transfer finish (21 s once) and the next pull resumes. Done downloads skip the network.
 - **Signals:** SIGTERM/SIGINT → graceful shutdown, logs `Stopping · releasing engine resources`,
   ~2 s. A model load takes ~11–15 s for a prepared package. GGUF preparation took 214 s with 5 workers.
 - **Endpoints:** `GET /` chat UI (off with `--no-webui`); `/health` is static 200 while HTTP is up;
@@ -48,7 +56,8 @@ Part of the project context; see [the index](../PROJECT_CONTEXT.md).
 
 - `~/git/slipstream`: Slipstream checkout. On `main`, which tracks the fork `mzinner/slipstream`:
   upstream plus PRs #3 (issue #1 fixes), #4 (GGUF conversion without reference, memory caps) and #5
-  (`serve --host`) as a linear stack. Remotes: `upstream` (npanj), `mzinner` (fork), `fork`
+  (`serve --host`) as a linear stack, then the fork's own commits (release workflow, converter
+  folder fix, v2-only packages, Hub-id install, `pull`). Remotes: `upstream` (npanj), `mzinner` (fork), `fork`
   (mariadb-MikeZinner, holds the open PR branches). Update with `git fetch upstream && git rebase
   upstream/main && git push --force-with-lease mzinner main`.
 - Remotes of this repo: `github` (`mzinner/slipstream-menubar-item`) and `origin` (NAS,
@@ -99,3 +108,18 @@ Part of the project context; see [the index](../PROJECT_CONTEXT.md).
     `test_package`'s `engine/splash` path assertion already fails on upstream (binary renamed).
   - **Verified on this Mac:** the app's installer installed it into `~/.local`, and it serves the
     prepared model correctly (17 × 23 = 391, "Tokyo").
+- **Hub-id install and `pull` (2026-10-03, fork v26.10.3, `main` up to `18815d8`):**
+  - `serve --model <GGUF repo>` used to fail ("no … manifest.json"); now it downloads the shards and
+    the MTP head the repository lacks (the Swift repository has none), checks disk for shards plus
+    prepared copy, then converts. `slipstream pull` does the download alone (for this app).
+  - The model store moved out of the checkout / Application Support to `~/.slipstream/models`
+    for source and release installs alike (user's choice, like oMLX's `~/.omlx/models`); excluded
+    from Time Machine on creation. Completion and `MODEL_ROOT` follow; `ci.yml`'s `clean: false`
+    comment says so.
+  - Measured on Swift V3 from a fresh download: prepared in 215 s, 42.0 tok/s decode with the
+    fetched MTP head (72 % acceptance) vs 20.0 tok/s with `SPLASH_NO_MTP=1`.
+  - Upstream-ready, pushed to `mzinner`, no PR yet: `feat/gguf-hub-install` (stacked on
+    `fix/converter-own-folder`) and `feat/slipstream-pull` (stacked on it). Open them after #3/#4,
+    from the `fork` remote like #3–#5.
+  - `make check-source` fails on `main` over whitespace in `.agents/*`, `docs/research/…` and two
+    `dev/tools` scripts, all older than this work.

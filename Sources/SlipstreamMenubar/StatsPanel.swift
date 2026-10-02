@@ -59,7 +59,7 @@ struct StatsView: View {
     /// Same as the content's side padding.
     static let edgeMargin: CGFloat = 16
     /// How far up the bottom fade reaches while there is more to scroll to.
-    static let fadeHeight: CGFloat = 30
+    static let fadeHeight: CGFloat = 40
 
     @State private var moreBelow = false
 

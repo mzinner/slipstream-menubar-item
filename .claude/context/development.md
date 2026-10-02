@@ -12,10 +12,12 @@ Part of the project context; see [the index](../PROJECT_CONTEXT.md).
 - **Accounts:** `gh` is logged into the private account `mzinner` (it was `mariadb-MikeZinner`
   earlier; the upstream PRs #3–#5 were opened from that one). The NAS git server is
   `ssh://192.168.10.245/volume1/Git/<name>`: bare repos, no `.git` suffix, `git init --bare -b main`.
-- **Model in use:** `~/models/qwen38-flash-next-v3`: 3 GGUF shards (~102 GB), `MTP/mtp-shared-Q4_K_M.gguf`,
-  `prepared/` (~100 GB, written by the converter on first serve). Served as
-  `local/qwen38-flash-next-v3` on 127.0.0.1:8090.
-- **App config on this Mac** (`menubar.json`): repo `~/git/slipstream`, the model above, port 8090,
+- **Models on this Mac:** in Slipstream's model store, `~/.slipstream/models/nitinpanj/`:
+  `qwen38-flash-next-v3` (3 GGUF shards, `MTP/mtp-shared-Q4_K_M.gguf`, `prepared/`, ~200 GB) and
+  `Swift-Qwen3.8-Flash-Next-Q4_0-Q8out-v3-GGUF` (the same layout, MTP head fetched by `pull`).
+  The configured one is served as `nitinpanj/qwen38-flash-next-v3` on 127.0.0.1:8090.
+- **App config on this Mac** (`menubar.json`): repo `~/git/slipstream`, model
+  `nitinpanj/qwen38-flash-next-v3` (moved from `~/models` on 2026-10-03), port 8090,
   not listening on the network, no API key. UserDefaults domain `local.slipstream.menubar`.
 
 ## Testing recipes

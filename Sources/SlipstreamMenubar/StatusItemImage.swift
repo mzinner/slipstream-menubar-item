@@ -10,9 +10,14 @@ enum StatusItemImage {
     private static let font = NSFont.monospacedDigitSystemFont(ofSize: 9.4, weight: .semibold)
     private static let lineHeight: CGFloat = 10.2
 
+    /// Shown in place of every value while the layout is being reviewed; nil for live values.
+    static let reviewValue: Double? = 400
+    /// Values above this are shown as this, which is what the column is sized for.
+    static let maximumShown: Double = 400
+
     /// Width of the widest readout, so the item never changes size as values change.
     private static let readoutWidth: CGFloat = {
-        let widest = NSAttributedString(string: "↑8888", attributes: [.font: font])
+        let widest = NSAttributedString(string: "↑" + compact(maximumShown), attributes: [.font: font])
         return ceil(widest.size().width)
     }()
 
@@ -25,8 +30,10 @@ enum StatusItemImage {
                 let x = boltSide + gap
                 // Two lines centred on the bar; top line is the prompt rate.
                 let top = height / 2
-                drawLine("↑" + compact(rates.prompt), x: x, baseline: top + 1.4)
-                drawLine("↓" + compact(rates.output), x: x, baseline: top + 1.4 - lineHeight)
+                let prompt = min(reviewValue ?? rates.prompt, maximumShown)
+                let output = min(reviewValue ?? rates.output, maximumShown)
+                drawLine("↑" + compact(prompt), right: x + readoutWidth, baseline: top + 1.4)
+                drawLine("↓" + compact(output), right: x + readoutWidth, baseline: top + 1.4 - lineHeight)
             }
             return true
         }
@@ -55,10 +62,11 @@ enum StatusItemImage {
         path.stroke()
     }
 
-    private static func drawLine(_ text: String, x: CGFloat, baseline: CGFloat) {
+    /// Draws a right-aligned line ending at `right`.
+    private static func drawLine(_ text: String, right: CGFloat, baseline: CGFloat) {
         let string = NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: NSColor.black])
         // draw(at:) places the line's bottom at y; lift it by the descender to sit on the baseline.
-        string.draw(at: NSPoint(x: x, y: baseline + font.descender))
+        string.draw(at: NSPoint(x: right - string.size().width, y: baseline + font.descender))
     }
 
     /// At most four characters: "0", "9.5", "41.2", "340", "1.2K", "12K".

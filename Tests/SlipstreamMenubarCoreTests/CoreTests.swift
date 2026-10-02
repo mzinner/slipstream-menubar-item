@@ -111,6 +111,18 @@ final class StatusResolverTests: XCTestCase {
         XCTAssertEqual(StatusResolver.resolve(.init(processAlive: true, healthOK: true, readyOK: true)), .running)
     }
 
+    func testABusyServerSeenFirstAtLaunchIsRunningNotLoading() {
+        let busy = StatusObservation(processAlive: true, healthOK: true, readyOK: false,
+                                     hasServedRequests: true)
+        XCTAssertEqual(StatusResolver.resolve(busy), .running)
+        var logged = LogProgress()
+        logged.phase = .ready
+        XCTAssertEqual(StatusResolver.resolve(.init(processAlive: true, healthOK: true, readyOK: false,
+                                                    logProgress: logged)), .running)
+        // A server that has not served anything and is not ready is still loading.
+        XCTAssertEqual(StatusResolver.resolve(.init(processAlive: true, healthOK: true, readyOK: false)), .loading)
+    }
+
     func testASaturatedServerStaysRunningWhileHealthy() {
         // Under load /ready answers 503 but /health stays 200.
         let busy = StatusObservation(processAlive: true, healthOK: true, readyOK: false,

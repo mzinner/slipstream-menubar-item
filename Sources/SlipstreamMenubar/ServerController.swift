@@ -73,6 +73,10 @@ final class ServerController: ObservableObject {
 
         let ours = livePid != nil && livePid == spawnedPid
         healthFailures = (livePid != nil && !healthOK) ? healthFailures + 1 : 0
+        // Only needed before the server has been seen as running: /ready is 503 while busy.
+        let undecided = !(status == .running || status == .unresponsive)
+        let served = livePid != nil && healthOK && !readyOK && undecided
+            ? await hasServedRequests(port: probePort) : false
         let observation = StatusObservation(
             processAlive: livePid != nil,
             healthOK: healthOK,
@@ -81,7 +85,8 @@ final class ServerController: ObservableObject {
             stopping: stopping,
             previous: status,
             healthFailures: healthFailures,
-            exitDescription: exitDescription
+            exitDescription: exitDescription,
+            hasServedRequests: served
         )
         let resolved = StatusResolver.resolve(observation)
 
@@ -107,6 +112,21 @@ final class ServerController: ObservableObject {
         } catch {
             return false
         }
+    }
+
+    /// Whether `/metrics` shows submitted requests, i.e. the model is loaded.
+    private func hasServedRequests(port: Int) async -> Bool {
+        guard let url = URL(string: "http://127.0.0.1:\(port)/metrics") else { return false }
+        var request = URLRequest(url: url)
+        if let apiKey, !apiKey.isEmpty {
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        }
+        guard let (data, response) = try? await session.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200,
+              let sample = EngineSample(metrics: PrometheusText.parse(String(decoding: data, as: UTF8.self)),
+                                        time: Date())
+        else { return false }
+        return sample.requestsSubmitted > 0
     }
 
     private func readLogProgress() -> LogProgress? {

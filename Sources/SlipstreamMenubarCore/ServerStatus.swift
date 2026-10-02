@@ -160,11 +160,14 @@ public struct StatusObservation: Equatable, Sendable {
     public var healthFailures: Int
     /// Exit description when a server this app started has just exited.
     public var exitDescription: String?
+    /// The server has already handled requests, so its model is loaded even when
+    /// `/ready` says no because it is busy.
+    public var hasServedRequests: Bool
 
     public init(
         processAlive: Bool, healthOK: Bool, readyOK: Bool, logProgress: LogProgress? = nil,
         stopping: Bool = false, previous: ServerStatus = .stopped, healthFailures: Int = 0,
-        exitDescription: String? = nil
+        exitDescription: String? = nil, hasServedRequests: Bool = false
     ) {
         self.processAlive = processAlive
         self.healthOK = healthOK
@@ -174,6 +177,7 @@ public struct StatusObservation: Equatable, Sendable {
         self.previous = previous
         self.healthFailures = healthFailures
         self.exitDescription = exitDescription
+        self.hasServedRequests = hasServedRequests
     }
 }
 
@@ -199,7 +203,12 @@ public enum StatusResolver {
             if observation.healthOK { return .running }
             return observation.healthFailures >= unresponsiveAfter ? .unresponsive : observation.previous
         }
-        if observation.healthOK { return .loading }
+        // First sight of a server that is already serving (at app launch, say): busy
+        // rather than loading if it has handled requests or logged that it is ready.
+        if observation.healthOK {
+            let loaded = observation.hasServedRequests || observation.logProgress?.phase == .ready
+            return loaded ? .running : .loading
+        }
         switch observation.logProgress?.phase {
         case .preparing: return .preparing(parts: observation.logProgress?.preparedParts ?? 0)
         case .loading: return .loading

@@ -38,6 +38,10 @@ curl -fsSL https://github.com/mzinner/slipstream/raw/main/install.sh | sh
 
 Settings → Server → Run can switch to a source checkout instead.
 
+The menu and Settings show the version the server is running. After an update is installed, the
+running server keeps its version until it restarts; the status then reads "restart to update to
+<version>", and the next start uses the new release.
+
 ## Models
 
 **Download Model…** in the menu, and Settings → Model, offer the supported models:
@@ -47,9 +51,9 @@ Settings → Server → Run can switch to a source checkout instead.
 | Swift-Qwen3.8-Flash-Next V3 (GGUF, plus the shared MTP draft head) | 104.5 GB | 64 GB Mac |
 | Qwen3.8-Flash-Next V3 (GGUF) | 104.5 GB | 64 GB Mac |
 
-The Slipstream v2 engine loads only Qwen3.8-Flash-Next. The `incoai/Qwen3.8-27B-Splash` and
-`Qwen3.6-35B-A3B-Splash` packages its launcher still lists, from Splash 1.0, fail with "unsupported
-weight format".
+The Slipstream v2 engine loads only Qwen3.8-Flash-Next. Launchers up to v26.10.1 still list the
+Splash 1.0 packages `incoai/Qwen3.8-27B-Splash` and `Qwen3.6-35B-A3B-Splash`, which download and
+then fail with "unsupported weight format"; the next release refuses them before downloading.
 
 **New Model…** takes any Hugging Face id and checks it first: a ready-to-run Slipstream package
 in the format the engine loads (`splash-packed-q4-qwen4exp`), or GGUF files of the `qwen4exp` architecture (read from
@@ -58,6 +62,28 @@ with Homebrew when missing, and show progress, speed and time left; at least 10 
 afterwards. GGUF models are converted on their first start, which the panel shows as a progress bar.
 On a 64 GB Mac the app raises `iogpu.wired_limit_mb` (Settings → Memory, default 59392) before
 each start.
+
+## Web UI
+
+**Open Web UI** (⌘O) opens Slipstream's chat page at `http://127.0.0.1:<port>/` in the default
+browser. It is available while the server is running, unless Settings → Access → Disable web UI is
+on.
+
+## Uninstall and Cleanup
+
+The last section of Settings lists the downloaded models with their sizes; each can be deleted on
+its own (Stop and Delete when the server is running it). **Uninstall and Cleanup…** lists everything
+the app and Slipstream put on this Mac, with sizes, and removes it after a confirmation:
+
+- the Slipstream releases in `~/.local/share/slipstream`, and `~/.local/bin/slipstream` if it
+  points into them
+- Slipstream's data and caches in `~/Library/Application Support/Slipstream-v2`
+- the app's settings, the server logs, the API key in the Keychain and the login item
+- the models, each of which can be unticked to keep it
+- the app itself, which goes to the Trash before it quits
+
+It stops the server first. Homebrew, `hf`, Hugging Face's cache in `~/.cache/huggingface` and any
+source checkout are left alone.
 
 ## Requirements
 
@@ -80,12 +106,13 @@ Keychain.
 
 ## How it works
 
-- **Status.** The launcher records its pid, model and port in
-  `<checkout>/build/runtime/serve.lock` and then `execve`s into `server/server.py`, so
+- **Status.** The launcher records its pid, model and port in `serve.lock` (in
+  `~/Library/Application Support/Slipstream-v2/runtime/` for a release,
+  `<checkout>/build/runtime/` for a checkout) and then `execve`s into `server/server.py`, so
   that pid is the server. The app reads the lock, checks that the pid is a live
   Slipstream launcher or server, and probes `/health` and `/ready`. A server started from
   a terminal is found the same way and is shown as "started elsewhere".
-- **Start.** Runs `<checkout>/slipstream serve --model … --port … [options]` in its own
+- **Start.** Runs `slipstream serve --model … --port … [options]` in its own
   session with output to `~/Library/Logs/Slipstream/server.log` (the previous log is kept
   as `server.log.1`). While a GGUF model is being prepared, the status shows the
   converter's progress from the log.
@@ -109,8 +136,8 @@ Keychain.
 
 | Setting | Passed as |
 |---|---|
-| Slipstream checkout | where `slipstream` is run from |
-| Model | `--model` (GGUF folder, prepared package, or Hub repo id) |
+| Run | the installed release, or a source checkout at a given path |
+| Model | `--model`: one of the supported models, one added with New Model…, or a custom folder or Hub id |
 | Port | `--port` |
 | Max context | `--max-context` (empty = auto) |
 | Max memory | `--max-memory` (empty = auto) |
@@ -118,6 +145,7 @@ Keychain.
 | Listen on the network | `--host 0.0.0.0` (off: 127.0.0.1 only); needs a launcher with `serve --host` ([npanj/slipstream#5](https://github.com/npanj/slipstream/pull/5)) |
 | Allowed hosts | `--allowed-host`, repeated: extra names clients may use, such as `<mac>.local` |
 | Disable web UI | `--no-webui` |
+| Raise the GPU memory limit before starting | `sudo sysctl iogpu.wired_limit_mb=<limit>` (64 GB Macs; default 59392) |
 | Start the server when the app launches | only if none is running already |
 | Open at login | a login item via `SMAppService` (needs the app in /Applications) |
 
@@ -130,8 +158,10 @@ is running.
 ## Layout
 
 ```
-Sources/SlipstreamMenubarCore/   metrics parsing, rates, status logic, config, system sampling
-Sources/SlipstreamMenubar/       AppKit menu, server control, SwiftUI panel and settings
+Sources/SlipstreamMenubarCore/   metrics parsing, rates, status logic, config, installation,
+                                 model checks, cleanup, system sampling
+Sources/SlipstreamMenubar/       AppKit menu, server control, SwiftUI panel and settings,
+                                 installer, model download and uninstall windows
 Tests/SlipstreamMenubarCoreTests/
 scripts/build-app.sh             assembles and signs the .app bundle
 scripts/fake-server.py           stand-in Slipstream server for testing (outages, busy, served requests)

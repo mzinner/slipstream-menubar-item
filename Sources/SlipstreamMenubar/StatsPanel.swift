@@ -10,8 +10,9 @@ final class StatsPanelController: NSObject, NSWindowDelegate {
     private let server: ServerController
     private let stats: StatsModel
     private let onVisibilityChange: (Bool) -> Void
-    /// Set once the user resizes the panel; until then it grows to fit its cards.
-    private static let userSizedKey = "statsPanelUserSized"
+    /// Set once the panel has been sized for all cards, or the user resized it or
+    /// switched views; until then it grows to fit its cards.
+    static let sizedKey = "statsPanelUserSized"
 
     init(server: ServerController, stats: StatsModel, onVisibilityChange: @escaping (Bool) -> Void) {
         self.server = server
@@ -54,7 +55,7 @@ final class StatsPanelController: NSObject, NSWindowDelegate {
     }
 
     func windowWillStartLiveResize(_ notification: Notification) {
-        UserDefaults.standard.set(true, forKey: Self.userSizedKey)
+        UserDefaults.standard.set(true, forKey: Self.sizedKey)
     }
 
     /// Until the user sizes the panel, make it tall enough for all cards (as far as
@@ -62,8 +63,13 @@ final class StatsPanelController: NSObject, NSWindowDelegate {
     /// appear one after another at launch, and the serving ones go away when the
     /// server stops, which should not shrink the window under the user.
     private func fit(contentHeight: CGFloat) {
-        guard !UserDefaults.standard.bool(forKey: Self.userSizedKey), let panel,
+        guard !UserDefaults.standard.bool(forKey: Self.sizedKey), let panel,
               let screen = panel.screen ?? NSScreen.main else { return }
+        // Once the serving cards are in, this is the full first-launch layout: size
+        // for it, then leave the panel alone (switching views must not resize it).
+        defer {
+            if stats.engine != nil { UserDefaults.standard.set(true, forKey: Self.sizedKey) }
+        }
         let visible = screen.visibleFrame
         let chrome = panel.frame.height - panel.contentLayoutRect.height
         let height = min(ceil(contentHeight + chrome), visible.height)
@@ -178,6 +184,8 @@ private struct ServerHeader: View {
                 }
                 Spacer()
                 Button {
+                    // Switching views is the user's call on size: no more automatic fitting.
+                    UserDefaults.standard.set(true, forKey: StatsPanelController.sizedKey)
                     withAnimation(.easeInOut(duration: 0.2)) { compact.toggle() }
                 } label: {
                     Image(systemName: compact ? "rectangle.expand.vertical" : "rectangle.compress.vertical")

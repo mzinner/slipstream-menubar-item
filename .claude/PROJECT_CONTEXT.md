@@ -202,10 +202,14 @@ MIT); first release v26.10.0.
 - `Resources/Info.plist`: bundle id `local.slipstream.menubar`, `LSUIElement`, macOS 15. The version
   is set by `build-app.sh` (`MARKETING_VERSION`; `CFBundleVersion` = `git describe`).
 - `Assets/MenuBarItem.png`, `Assets/StatsPanel.png`: README screenshots taken by the user.
-- `scripts/make-icon.swift` → `Resources/AppIcon.icns` (committed; `CFBundleIconFile AppIcon`): the
-  web UI's bolt as a white outline with a soft glow on an indigo→violet rounded tile (macOS grid:
-  824/1024 tile, radius 185). Rerun it after changing the design:
-  `swift scripts/make-icon.swift Resources/AppIcon.icns preview.png`.
+- `scripts/make-icon.swift` → `Resources/AppIcon.icns` (committed, 91 KB; `CFBundleIconFile
+  AppIcon`): the web UI's bolt as a white outline, no glow (user's choice), on an indigo→violet
+  rounded tile (macOS grid: 824/1024 tile, radius 185). Rerun it after changing the design:
+  `swift scripts/make-icon.swift Resources/AppIcon.icns preview.png`. Size rules learned:
+  - `NSGradient` dithers: the gradient is drawn as flat rows instead (162 → 32 KB at 1024 px).
+  - Each pixel size is written once (16@2x, 128@2x, 256@2x would repeat 32/256/512 px).
+  - A blurred glow roughly doubles the size (189 KB). The original was 532 KB.
+  - `pngquant` is not installed.
 
 ## Release process
 

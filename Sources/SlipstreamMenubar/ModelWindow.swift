@@ -88,8 +88,8 @@ final class ModelWindowController: NSObject, NSWindowDelegate {
         }
         guard installation.supportsPull else {
             let answer = ask("Update Slipstream first",
-                             "This \(installation.displayName) cannot download models yet: that needs a "
-                             + "Slipstream with `slipstream pull`."
+                             "This \(installation.displayName) cannot download models yet: that needs "
+                             + "Slipstream 26.10.3 or later, which has `slipstream pull`."
                              + (installation.kind == .checkout ? " Update the checkout in \(installation.root.path)." : ""),
                              buttons: installation.kind == .release ? ["Update Slipstream…", "Cancel"] : ["OK"],
                              style: .informational)

@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var installer: InstallWindowController!
     private var modelWindow: ModelWindowController!
     private var uninstaller: UninstallWindowController!
+    private var updater: AppUpdateWindowController!
     private var pollTask: Task<Void, Never>?
     private var menuOpen = false
 
@@ -26,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.menu.update()
             })
         uninstaller = UninstallWindowController(server: server)
+        updater = AppUpdateWindowController(updater: AppUpdater())
         modelWindow = ModelWindowController(
             searchPath: { [weak self] in self?.server.searchPath ?? [] },
             models: { [weak self] in self?.server.config.availableModels ?? ModelSpec.catalog },
@@ -51,6 +53,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             isPanelVisible: { [weak self] in self?.panel.isVisible ?? false },
             settings: { [weak self] in self?.settings.show() },
             about: { [weak self] in self?.showAbout() },
+            checkForUpdates: { [weak self] in
+                guard let self else { return }
+                if case .available = self.updater.updater.phase {
+                    self.updater.show()
+                } else if let release = self.updater.updater.available, !self.updater.updater.phase.isRunning {
+                    self.updater.updater.offer(release)
+                    self.updater.show()
+                } else {
+                    self.updater.show(check: !self.updater.updater.phase.isRunning)
+                }
+            },
+            availableUpdate: { [weak self] in self?.updater.updater.available?.version },
             menuOpened: { [weak self] open in self?.menuOpen = open },
             readout: { [weak self] in
                 guard let rates = self?.stats.rates else { return (0, 0) }
@@ -68,11 +82,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.start()
             }
             while !Task.isCancelled {
+                // At most once a day; a cheap date comparison otherwise.
+                self.updater.updater.checkIfDue(enabled: self.server.config.checkForAppUpdates)
                 try? await Task.sleep(for: .seconds(self.pollInterval))
                 await self.tick()
             }
         }
+        updater.updater.canQuit = { [weak self] in self?.modelWindow.confirmQuit() ?? true }
         if server.config.model.isEmpty { settings.show() }
+        // Development aids: the update window with a check, or a check that installs
+        // whatever newer version it finds without asking.
+        if CommandLine.arguments.contains("--check-updates") { updater.show(check: true) }
+        if CommandLine.arguments.contains("--update-now") { updateWithoutAsking() }
         if CommandLine.arguments.contains("--show-panel") { panel.show() }
         // Development aid: opens the installer and starts the download at once.
         if CommandLine.arguments.contains("--install-latest") { installer.show(startImmediately: true) }
@@ -90,7 +111,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        modelWindow.confirmQuit() ? .terminateNow : .terminateCancel
+        if UpdateQuit.approved { return .terminateNow }
+        return modelWindow.confirmQuit() ? .terminateNow : .terminateCancel
+    }
+
+    private func updateWithoutAsking() {
+        let updater = updater.updater
+        self.updater.show(check: true)
+        Task { @MainActor in
+            while updater.phase == .checking { try? await Task.sleep(for: .milliseconds(200)) }
+            if case .available(let release) = updater.phase { updater.install(release) }
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {

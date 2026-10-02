@@ -11,6 +11,7 @@ import SlipstreamMenubarCore
 ///   ─────
 ///   Settings…  ⌘,
 ///   About Slipstream Menubar
+///   Check for Updates… / Update to <version>…
 ///   ─────
 ///   Quit  ⌘Q
 @MainActor
@@ -29,6 +30,7 @@ final class MenuController: NSObject, NSMenuDelegate {
     private var forceStopItem: NSMenuItem!
     private var panelItem: NSMenuItem!
     private var webUIItem: NSMenuItem!
+    private var updateItem: NSMenuItem!
 
     struct Actions {
         var start: () -> Void
@@ -42,6 +44,9 @@ final class MenuController: NSObject, NSMenuDelegate {
         var isPanelVisible: () -> Bool
         var settings: () -> Void
         var about: () -> Void
+        var checkForUpdates: () -> Void
+        /// A newer version of the app, once a check has found one.
+        var availableUpdate: () -> String?
         var menuOpened: (Bool) -> Void
         /// Prompt and output tokens per second while serving.
         var readout: () -> (prompt: Double, output: Double)?
@@ -74,6 +79,7 @@ final class MenuController: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
         add("Settings…", #selector(settings), key: ",")
         add("About Slipstream Menubar", #selector(about))
+        updateItem = add("Check for Updates…", #selector(checkForUpdates))
         menu.addItem(.separator())
         add("Quit", #selector(quit), key: "q")
         statusItem.menu = menu
@@ -131,6 +137,7 @@ final class MenuController: NSObject, NSMenuDelegate {
         // The chat page is served at / unless the server runs with --no-webui.
         webUIItem.isEnabled = status == .running && !server.config.noWebUI
         webUIItem.toolTip = server.config.noWebUI ? "The web UI is turned off in Settings" : nil
+        updateItem.title = actions.availableUpdate().map { "Update to \($0)…" } ?? "Check for Updates…"
     }
 
     /// The status item's on-screen width and its image's width, for layout checks.
@@ -158,5 +165,6 @@ final class MenuController: NSObject, NSMenuDelegate {
     @objc private func downloadModel() { actions.downloadModel() }
     @objc private func settings() { actions.settings() }
     @objc private func about() { actions.about() }
+    @objc private func checkForUpdates() { actions.checkForUpdates() }
     @objc private func quit() { NSApp.terminate(nil) }
 }

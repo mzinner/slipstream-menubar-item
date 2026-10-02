@@ -24,6 +24,17 @@ either `Slipstream-Menubar.app.<version>.dmg` (open it and drag the app onto *Ap
 Privacy & Security → Open Anyway*, or run
 `xattr -dr com.apple.quarantine "/Applications/Slipstream Menubar.app"`.
 
+### Updates
+
+The app looks for a newer release of itself about once a day (Settings → App → *Check for app
+updates automatically*), and on **Check for Updates…** in the menu. When it finds one, it shows the
+changes and offers *Update and Relaunch*, *Later* or *Skip This Version*. Updating downloads the
+release's zip, verifies it against the release's checksums, checks that it is this app at that
+version with an intact signature, puts it in place of the running copy and relaunches; the server
+keeps running. If the app's folder is not writable, macOS asks for an administrator password.
+Because each build is signed ad hoc, macOS may ask once after an update whether the app may use
+its API key in the Keychain.
+
 ## Slipstream itself
 
 The app runs the Slipstream it finds at `~/.local/bin/slipstream`, else `slipstream` on your
@@ -147,6 +158,7 @@ Keychain.
 | Disable web UI | `--no-webui` |
 | Raise the GPU memory limit before starting | `sudo sysctl iogpu.wired_limit_mb=<limit>` (64 GB Macs; default 59392) |
 | Start the server when the app launches | only if none is running already |
+| Check for app updates automatically | about once a day, against this repository's releases |
 | Open at login | a login item via `SMAppService` (needs the app in /Applications) |
 
 With the network option on, other machines connect to `http://<this Mac's IP>:<port>`;

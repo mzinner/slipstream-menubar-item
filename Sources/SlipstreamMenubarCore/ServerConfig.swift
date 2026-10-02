@@ -25,6 +25,8 @@ public struct ServerConfig: Codable, Equatable, Sendable {
     public var listenOnNetwork: Bool
     /// Start the server when the app launches if it is not already running.
     public var startServerOnLaunch: Bool
+    /// Look for a newer release of this app about once a day, and offer it.
+    public var checkForAppUpdates: Bool
     /// On a 64 GB Mac, set `iogpu.wired_limit_mb` to `gpuWiredLimitMB` before starting
     /// the server (asks for an administrator password; the value resets at boot).
     public var raiseGPULimit: Bool
@@ -46,6 +48,7 @@ public struct ServerConfig: Codable, Equatable, Sendable {
         noWebUI: Bool = false,
         listenOnNetwork: Bool = false,
         startServerOnLaunch: Bool = false,
+        checkForAppUpdates: Bool = true,
         raiseGPULimit: Bool = true,
         gpuWiredLimitMB: Int = GPUMemoryLimit.recommendedMB,
         customModels: [ModelSpec] = []
@@ -61,6 +64,7 @@ public struct ServerConfig: Codable, Equatable, Sendable {
         self.noWebUI = noWebUI
         self.listenOnNetwork = listenOnNetwork
         self.startServerOnLaunch = startServerOnLaunch
+        self.checkForAppUpdates = checkForAppUpdates
         self.raiseGPULimit = raiseGPULimit
         self.gpuWiredLimitMB = gpuWiredLimitMB
         self.customModels = customModels
@@ -84,6 +88,8 @@ public struct ServerConfig: Codable, Equatable, Sendable {
             ?? defaults.listenOnNetwork
         startServerOnLaunch = try container.decodeIfPresent(Bool.self, forKey: .startServerOnLaunch)
             ?? defaults.startServerOnLaunch
+        checkForAppUpdates = try container.decodeIfPresent(Bool.self, forKey: .checkForAppUpdates)
+            ?? defaults.checkForAppUpdates
         raiseGPULimit = try container.decodeIfPresent(Bool.self, forKey: .raiseGPULimit) ?? defaults.raiseGPULimit
         gpuWiredLimitMB = try container.decodeIfPresent(Int.self, forKey: .gpuWiredLimitMB) ?? defaults.gpuWiredLimitMB
         customModels = (try? container.decodeIfPresent([ModelSpec].self, forKey: .customModels)) ?? defaults.customModels

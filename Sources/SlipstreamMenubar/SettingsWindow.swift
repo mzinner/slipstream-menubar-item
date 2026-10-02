@@ -158,6 +158,7 @@ private struct SettingsView: View {
                 }
                 SwiftUI.Section("App") {
                     Toggle("Start the server when the app launches", isOn: $config.startServerOnLaunch)
+                    Toggle("Check for app updates automatically", isOn: $config.checkForAppUpdates)
                     Toggle("Open at login", isOn: $launchAtLogin)
                         .onChange(of: launchAtLogin) { _, enabled in setLoginItem(enabled) }
                     if let loginItemError {

@@ -694,3 +694,93 @@ final class CleanupTests: XCTestCase {
         } else { XCTFail("a 300 GB repository must be rejected") }
     }
 }
+
+final class AppUpdateTests: XCTestCase {
+    private let notes = """
+    ## Changes
+
+    - Check for updates and update the app from the menu
+    - Uninstall and Cleanup in Settings
+
+    ## Install
+    - not a change
+    """
+
+    func testReadsTheLatestRelease() throws {
+        let json = """
+        {"tag_name": "v26.10.1", "html_url": "https://github.com/o/r/releases/tag/v26.10.1",
+         "body": \(String(data: try JSONEncoder().encode(notes), encoding: .utf8)!),
+         "assets": [
+           {"name": "Slipstream-Menubar.app.26.10.1.zip", "size": 1234,
+            "browser_download_url": "https://example.com/a.zip"},
+           {"name": "SHA256SUMS.26.10.1.txt", "browser_download_url": "https://example.com/sums"}]}
+        """
+        let release = try XCTUnwrap(AppRelease(json: Data(json.utf8)))
+        XCTAssertEqual(release.version, "26.10.1")
+        XCTAssertEqual(release.changes, ["Check for updates and update the app from the menu",
+                                         "Uninstall and Cleanup in Settings"])
+        XCTAssertEqual(release.assets[release.zipName]?.absoluteString, "https://example.com/a.zip")
+        XCTAssertEqual(release.sizes[release.zipName], 1234)
+        XCTAssertNotNil(release.assets[release.checksumsName])
+        XCTAssertNil(AppRelease(json: Data("{}".utf8)))
+        XCTAssertEqual(AppRelease.changes(fromNotes: "Just text"), [])
+    }
+
+    func testOffersOnlyNewerRealVersions() {
+        XCTAssertTrue(AppUpdate.isNewer("26.10.1", than: "26.10.0"))
+        XCTAssertTrue(AppUpdate.isNewer("26.11.0", than: "26.10.9"))
+        XCTAssertTrue(AppUpdate.isNewer("26.10.10", than: "26.10.9"), "numeric, not text order")
+        XCTAssertFalse(AppUpdate.isNewer("26.10.0", than: "26.10.0"))
+        XCTAssertFalse(AppUpdate.isNewer("26.9.0", than: "26.10.0"))
+        XCTAssertFalse(AppUpdate.isNewer("26.10.1", than: "0.0.0"), "a development build is never offered one")
+        XCTAssertFalse(AppUpdate.isNewer("nightly", than: "26.10.0"))
+    }
+
+    func testChecksAboutOnceADay() {
+        let now = Date()
+        XCTAssertTrue(AppUpdate.isCheckDue(lastCheck: nil, now: now))
+        XCTAssertFalse(AppUpdate.isCheckDue(lastCheck: now.addingTimeInterval(-3600), now: now))
+        XCTAssertTrue(AppUpdate.isCheckDue(lastCheck: now.addingTimeInterval(-21 * 3600), now: now))
+        XCTAssertTrue(AppUpdate.isCheckDue(lastCheck: now.addingTimeInterval(3600), now: now), "clock moved back")
+    }
+
+    func testFindsTheZipsChecksum() {
+        let sums = """
+        AAAA1111  Slipstream-Menubar.app.26.10.1.zip
+        bbbb2222  Slipstream-Menubar.app.26.10.1.dmg
+        """
+        XCTAssertEqual(AppUpdate.checksum(for: "Slipstream-Menubar.app.26.10.1.zip", in: sums), "aaaa1111")
+        XCTAssertNil(AppUpdate.checksum(for: "Slipstream-Menubar.app.26.10.2.zip", in: sums))
+    }
+
+    func testSwapPutsTheNewBundleInPlaceOrRestoresTheOld() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("swap-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let app = root.appendingPathComponent("It's an App.app")  // a quote, as a path may have
+        let staged = root.appendingPathComponent("staged/New.app")
+        let backup = root.appendingPathComponent("staged/previous.app")
+        for (folder, marker) in [(app, "old"), (staged, "new")] {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try marker.write(to: folder.appendingPathComponent("marker"), atomically: true, encoding: .utf8)
+        }
+        XCTAssertEqual(try shell(AppUpdate.swapCommand(app: app, staged: staged, backup: backup)), 0)
+        XCTAssertEqual(try String(contentsOf: app.appendingPathComponent("marker"), encoding: .utf8), "new")
+        XCTAssertEqual(try String(contentsOf: backup.appendingPathComponent("marker"), encoding: .utf8), "old")
+
+        // A staged bundle that is gone: the old one must come back.
+        try FileManager.default.removeItem(at: backup)
+        let missing = root.appendingPathComponent("staged/Missing.app")
+        XCTAssertNotEqual(try shell(AppUpdate.swapCommand(app: app, staged: missing, backup: backup)), 0)
+        XCTAssertEqual(try String(contentsOf: app.appendingPathComponent("marker"), encoding: .utf8), "new")
+    }
+
+    private func shell(_ command: String) throws -> Int32 {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", command]
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        process.waitUntilExit()
+        return process.terminationStatus
+    }
+}

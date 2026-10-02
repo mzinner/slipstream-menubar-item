@@ -67,6 +67,20 @@ Part of the project context; see [the index](../PROJECT_CONTEXT.md).
   - `--download <repo>` dev aid starts a catalog model's download.
 - **Open Web UI** (menu, ⌘O): opens `http://127.0.0.1:<port>/` in the default browser while the
   server is serving and the web UI is on (`noWebUI` off).
+- **App self-update** (`AppUpdate.swift` in Core, `AppUpdater.swift`, `FileDownload.swift`):
+  - **Check:** GitHub `releases/latest` of `mzinner/slipstream-menubar-item` (override
+    `SLIPSTREAM_MENUBAR_UPDATE_REPO`), at most every 20 h from the poll loop
+    (`config.checkForAppUpdates`, default on), or the menu's Check for Updates… (titled "Update to
+    <v>…" once one is known). Last check and skipped version live in UserDefaults.
+  - **Notes:** the window lists the release body's `## Changes` bullets; the release workflow
+    writes them from `git log <previous tag>..<tag>`, leaving out `.claude`-only commits.
+  - **Install:** download `Slipstream-Menubar.app.<v>.zip`, verify against `SHA256SUMS.<v>.txt`,
+    `ditto` into a temp folder, check bundle id, version and `codesign --verify --deep --strict`,
+    ask `modelWindow.confirmQuit()`, then `mv` app → backup and staged → app (admin prompt via
+    NSAppleScript if the folder isn't writable), start a detached `sh` that waits for the pid,
+    removes the backup and `open`s the app, and quit (`UpdateQuit.approved` skips the quit question).
+  - A 0.0.0 build (no tag) is never offered an update. Dev flags: `--check-updates`, `--update-now`.
+  - `ReleaseInstaller` now uses the same `FileDownload`.
 - **Uninstall and Cleanup** (Settings, last section; `Cleanup.swift`, `UninstallWindow.swift`):
   - **Per model:** each downloaded model can be deleted with its size; "Stop and Delete" if the
     server runs it.

@@ -7,7 +7,7 @@ import SlipstreamMenubarCore
 /// ~/.local/share/slipstream/<version>, linked as ~/.local/bin/slipstream, and only
 /// the two newest versions kept.
 @MainActor
-final class ReleaseInstaller: NSObject, ObservableObject {
+final class ReleaseInstaller: ObservableObject {
     enum Phase: Equatable {
         case idle
         case resolving
@@ -36,12 +36,9 @@ final class ReleaseInstaller: NSObject, ObservableObject {
     }
 
     private var task: Task<Void, Never>?
-    private var download: URLSessionDownloadTask?
-    private var downloadContinuation: CheckedContinuation<URL, Error>?
-    /// For the release listing and SHA256SUMS. The download has its own session with
-    /// this object as delegate, for progress: async requests on that one never finish.
+    private let download = FileDownload()
+    /// For the release listing and SHA256SUMS; the package goes through `download`.
     private let session = URLSession(configuration: .ephemeral)
-    private lazy var downloadSession = URLSession(configuration: .ephemeral, delegate: self, delegateQueue: .main)
 
     init(repository: String) {
         self.repository = repository
@@ -70,7 +67,7 @@ final class ReleaseInstaller: NSObject, ObservableObject {
     }
 
     func cancel() {
-        download?.cancel()
+        download.cancel()
         task?.cancel()
     }
 
@@ -91,8 +88,13 @@ final class ReleaseInstaller: NSObject, ObservableObject {
         }
         packageName = package.name
 
-        phase = .downloading(received: 0, total: release.sizes[package.name] ?? 0)
-        let zip = try await downloadFile(packageURL)
+        let known = release.sizes[package.name] ?? 0
+        phase = .downloading(received: 0, total: known)
+        download.onProgress = { [weak self] received, total in
+            guard let self, case .downloading = self.phase else { return }
+            self.phase = .downloading(received: received, total: total > 0 ? total : known)
+        }
+        let zip = try await download.run(packageURL)
         defer { try? FileManager.default.removeItem(at: zip) }
         try Task.checkCancellation()
 
@@ -149,19 +151,6 @@ final class ReleaseInstaller: NSObject, ObservableObject {
         return data
     }
 
-    private func downloadFile(_ url: URL) async throws -> URL {
-        try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { continuation in
-                downloadContinuation = continuation
-                let task = downloadSession.downloadTask(with: url)
-                download = task
-                task.resume()
-            }
-        } onCancel: {
-            Task { @MainActor in self.download?.cancel() }
-        }
-    }
-
     nonisolated static func sha256(of file: URL) throws -> String {
         let handle = try FileHandle(forReadingFrom: file)
         defer { try? handle.close() }
@@ -214,41 +203,5 @@ final class ReleaseInstaller: NSObject, ObservableObject {
             try? fileManager.removeItem(at: prefix.appendingPathComponent(old))
         }
         return version
-    }
-}
-
-extension ReleaseInstaller: URLSessionDownloadDelegate {
-    nonisolated func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
-                                didWriteData bytesWritten: Int64, totalBytesWritten: Int64,
-                                totalBytesExpectedToWrite: Int64) {
-        MainActor.assumeIsolated {
-            if case .downloading(_, let known) = phase {
-                phase = .downloading(received: totalBytesWritten,
-                                     total: totalBytesExpectedToWrite > 0 ? totalBytesExpectedToWrite : known)
-            }
-        }
-    }
-
-    nonisolated func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
-                                didFinishDownloadingTo location: URL) {
-        // The file is deleted when this returns; keep it.
-        let kept = FileManager.default.temporaryDirectory.appendingPathComponent("slipstream-\(UUID().uuidString).zip")
-        let result = Result { try FileManager.default.moveItem(at: location, to: kept); return kept }
-        MainActor.assumeIsolated {
-            if (downloadTask.response as? HTTPURLResponse)?.statusCode != 200 {
-                downloadContinuation?.resume(throwing: InstallError(message: "The package download failed"))
-            } else {
-                downloadContinuation?.resume(with: result)
-            }
-            downloadContinuation = nil
-        }
-    }
-
-    nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        guard let error else { return }
-        MainActor.assumeIsolated {
-            downloadContinuation?.resume(throwing: error)
-            downloadContinuation = nil
-        }
     }
 }

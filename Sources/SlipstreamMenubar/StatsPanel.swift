@@ -60,6 +60,9 @@ struct StatsView: View {
         ScrollView {
             StatsContent(server: server, stats: stats)
         }
+        // Clip the scrolling content short of the window's bottom edge, by the same
+        // margin the cards keep from the sides.
+        .padding(.bottom, 16)
         .frame(minWidth: 380)
     }
 }
@@ -83,8 +86,6 @@ struct StatsContent: View {
             }
             .padding(.horizontal, 16)
             .padding(.top, 16)
-            // The last card sits on the window edge; a little more below reads as the same margin.
-            .padding(.bottom, 24)
     }
 }
 

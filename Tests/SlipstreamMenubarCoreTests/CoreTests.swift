@@ -160,9 +160,15 @@ final class ServerConfigTests: XCTestCase {
     }
 
     func testValidation() {
-        let config = ServerConfig(repoPath: "/nonexistent", model: "", port: 0, maxContext: "lots", maxMemory: "48G")
+        // The GPU limit is off: whether its default fits depends on this machine's memory.
+        let config = ServerConfig(repoPath: "/nonexistent", model: "", port: 0, maxContext: "lots", maxMemory: "48G",
+                                  raiseGPULimit: false)
         let errors = config.validationErrors(installation: nil)
         XCTAssertEqual(errors.count, 4, "\(errors)")
+        var limited = config
+        limited.raiseGPULimit = true
+        limited.gpuWiredLimitMB = 4096
+        XCTAssertTrue(limited.validationErrors(installation: nil).contains { $0.contains("GPU memory limit") })
     }
 
     func testRoundTripsThroughTheStore() throws {

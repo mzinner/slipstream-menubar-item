@@ -218,7 +218,9 @@ private struct ServerHeader: View {
                 if let pid = server.pid {
                     Text(verbatim: "pid \(pid)")
                 }
-                if let installation = server.installation {
+                if let running = server.runningVersion, server.status.isActive {
+                    Text(verbatim: "Slipstream \(running)")
+                } else if let installation = server.installation {
                     Text(verbatim: installation.displayName)
                 } else {
                     Text("not installed")
@@ -227,6 +229,13 @@ private struct ServerHeader: View {
             .font(.caption).foregroundStyle(.secondary)
             if case .failed(let message) = server.status {
                 Text(message).font(.caption).foregroundStyle(.red).textSelection(.enabled)
+            }
+            if let installed = server.pendingUpdate, let running = server.runningVersion {
+                // After an update the running server keeps its version until it restarts.
+                let action = ReleasePackages.isOlder(running, installed) ? "update" : "switch"
+                Label("Slipstream \(installed) is installed; this server runs \(running). "
+                      + "Stop and start it to \(action).", systemImage: "arrow.triangle.2.circlepath")
+                    .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
             }
             if server.missingMTPDraftHead && server.status.isActive {
                 Label("No MTP draft head next to the model: decoding runs one token per step, much slower. "

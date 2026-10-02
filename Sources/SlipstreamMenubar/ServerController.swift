@@ -23,6 +23,9 @@ final class ServerController: ObservableObject {
     /// The Slipstream that Start runs: the installed release, or a checkout if the
     /// settings ask for one. Nil means nothing is installed.
     @Published private(set) var installation: SlipstreamInstallation?
+    /// The release the running server was started from (nil for a checkout or no server).
+    /// It differs from `installation` after an update until the server restarts.
+    @Published private(set) var runningVersion: String?
     /// The last preparation of this app's server ran without an MTP draft head.
     @Published private(set) var missingMTPDraftHead = false
     /// Seconds left of a first-start GGUF preparation, from its pace so far.
@@ -78,6 +81,13 @@ final class ServerController: ObservableObject {
     func locate() {
         let found = installation(for: config)
         if found != installation { installation = found }
+    }
+
+    /// The installed release is newer than the one the running server uses: a restart updates it.
+    var pendingUpdate: String? {
+        guard status.isActive, let running = runningVersion, let installed = installation?.version,
+              running != installed else { return nil }
+        return installed
     }
 
     /// What Start would run with these settings, for the settings window.
@@ -141,6 +151,12 @@ final class ServerController: ObservableObject {
             stopDeadline = nil
         } else if stopping, let deadline = stopDeadline, Date() > deadline, let livePid {
             kill(livePid, SIGKILL)  // did not exit after SIGTERM
+        }
+        if livePid != pid {  // argv only changes with the process
+            runningVersion = livePid
+                .flatMap(ServerProcessInspector.arguments(of:))
+                .flatMap(SlipstreamInstallation.runningRoot(arguments:))
+                .flatMap(SlipstreamInstallation.releaseVersion(ofRoot:))
         }
         pid = livePid
         port = probePort

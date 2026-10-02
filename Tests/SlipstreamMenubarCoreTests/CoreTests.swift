@@ -532,3 +532,22 @@ final class MTPDraftHeadTests: XCTestCase {
         XCTAssertFalse(LogProgress.parse("Sidecar: /m/MTP/mtp-shared-Q4_K_M.gguf\n").missingMTPDraftHead)
     }
 }
+
+final class RunningVersionTests: XCTestCase {
+    func testTheRootComesFromTheServersArguments() {
+        let serving = ["/x/26.10.0/python/bin/python3", "-u", "/x/26.10.0/server/server.py", "/m/prepared/target"]
+        XCTAssertEqual(SlipstreamInstallation.runningRoot(arguments: serving)?.path, "/x/26.10.0")
+        let preparing = ["python3", "-u", "/repo/install/launcher.py", "serve", "--model", "/m"]
+        XCTAssertEqual(SlipstreamInstallation.runningRoot(arguments: preparing)?.path, "/repo")
+        XCTAssertNil(SlipstreamInstallation.runningRoot(arguments: ["/usr/bin/python3", "other.py"]))
+    }
+
+    func testTheVersionOfARoot() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        XCTAssertNil(SlipstreamInstallation.releaseVersion(ofRoot: root), "a checkout has no release.json")
+        try Data(#"{"version": "26.10.0"}"#.utf8).write(to: root.appendingPathComponent("release.json"))
+        XCTAssertEqual(SlipstreamInstallation.releaseVersion(ofRoot: root), "26.10.0")
+    }
+}

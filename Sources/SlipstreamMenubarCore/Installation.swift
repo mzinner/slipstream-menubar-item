@@ -75,6 +75,22 @@ public struct SlipstreamInstallation: Equatable, Sendable {
         return SlipstreamInstallation(kind: .checkout, launcher: launcher, root: root, version: nil)
     }
 
+    /// The package or checkout a running server was started from, read from its argv:
+    /// `…/<root>/server/server.py` once serving, `…/<root>/install/launcher.py` while preparing.
+    public static func runningRoot(arguments: [String]) -> URL? {
+        for argument in arguments {
+            for suffix in ["/server/server.py", "/install/launcher.py"] where argument.hasSuffix(suffix) {
+                return URL(fileURLWithPath: String(argument.dropLast(suffix.count)))
+            }
+        }
+        return nil
+    }
+
+    /// The release version of a package root; nil for a checkout.
+    public static func releaseVersion(ofRoot root: URL) -> String? {
+        releaseVersion(at: root.appendingPathComponent("release.json"))
+    }
+
     static func releaseVersion(at url: URL) -> String? {
         guard let data = try? Data(contentsOf: url),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }

@@ -101,6 +101,12 @@ MIT); first release v26.10.0.
   `/usr/sbin/sysctl iogpu.wired_limit_mb=…` through `NSAppleScript … with administrator
   privileges`. If that fails: "Cancel" / "Start Anyway". Settings → Memory shows the current value.
   It was already 59392 on this Mac, so the password prompt is untested here.
+- **Running vs. installed version:** an update only re-points `~/.local/bin/slipstream`; a running
+  server keeps its version until restarted, and every Start runs the link, so the latest. The
+  panel shows the *running* version, from the server's argv (`runningRoot`: the path of
+  `server/server.py` or `install/launcher.py` → `release.json`). When it differs from the
+  installed one (`pendingUpdate`), an orange line says "… is installed; this server runs …. Stop
+  and start it to update/switch", and the menu detail says "restart to update to …".
 - **First-start preparation:** for a server the app started, the log's 53 `[DONE]` lines drive a
   progress bar in the panel header, with an ETA from the pace so far
   (`preparationSecondsLeft`). The panel opens by itself when preparation begins.

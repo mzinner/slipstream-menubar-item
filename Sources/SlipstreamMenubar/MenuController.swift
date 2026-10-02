@@ -108,6 +108,10 @@ final class MenuController: NSObject, NSMenuDelegate {
         var detail: [String] = []
         if let model = server.model { detail.append((model as NSString).lastPathComponent) }
         if status.isActive { detail.append(server.listensOnNetwork ? "network :\(server.port)" : ":\(server.port)") }
+        if let installed = server.pendingUpdate, let running = server.runningVersion {
+            detail.append(ReleasePackages.isOlder(running, installed)
+                          ? "restart to update to \(installed)" : "restart to switch to \(installed)")
+        }
         if case .failed(let message) = status { detail.append(message) }
         detailItem.title = detail.joined(separator: " · ")
         detailItem.isHidden = detail.isEmpty

@@ -272,6 +272,9 @@ private struct SeriesChart: View {
     /// The smallest top for the y axis, so an idle chart still has sensible labels.
     var minimumTop: Double = 1
 
+    /// Fits the widest label, e.g. "46.6 GB".
+    static let axisLabelWidth: CGFloat = 46
+
     private struct Point: Identifiable {
         let series: String
         let time: Date
@@ -309,7 +312,13 @@ private struct SeriesChart: View {
             AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { value in
                 AxisGridLine()
                 AxisValueLabel {
-                    if let number = value.as(Double.self) { Text(valueLabel(number)) }
+                    // One fixed width for every chart, so their plot areas line up.
+                    if let number = value.as(Double.self) {
+                        Text(valueLabel(number))
+                            .font(.caption2.monospacedDigit())
+                            .lineLimit(1)
+                            .frame(width: Self.axisLabelWidth, alignment: .leading)
+                    }
                 }
             }
         }

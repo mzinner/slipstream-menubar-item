@@ -10,6 +10,8 @@ final class StatsPanelController: NSObject, NSWindowDelegate {
     private let server: ServerController
     private let stats: StatsModel
     private let onVisibilityChange: (Bool) -> Void
+    /// Set once the user resizes the panel; until then it grows to fit its cards.
+    private static let userSizedKey = "statsPanelUserSized"
 
     init(server: ServerController, stats: StatsModel, onVisibilityChange: @escaping (Bool) -> Void) {
         self.server = server
@@ -31,7 +33,9 @@ final class StatsPanelController: NSObject, NSWindowDelegate {
             panel.isReleasedWhenClosed = false
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
             panel.contentMinSize = NSSize(width: 380, height: 360)
-            panel.contentView = NSHostingView(rootView: StatsView(server: server, stats: stats))
+            panel.contentView = NSHostingView(rootView: StatsView(server: server, stats: stats) { [weak self] height in
+                self?.fit(contentHeight: height)
+            })
             panel.setFrameAutosaveName("SlipstreamStatsPanel")
             if panel.frame.origin == .zero { panel.center() }
             panel.delegate = self
@@ -48,6 +52,29 @@ final class StatsPanelController: NSObject, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         onVisibilityChange(false)
     }
+
+    func windowWillStartLiveResize(_ notification: Notification) {
+        UserDefaults.standard.set(true, forKey: Self.userSizedKey)
+    }
+
+    /// Until the user sizes the panel, make it tall enough for all cards (as far as
+    /// the screen allows), keeping its top edge where it is. It only grows: the cards
+    /// appear one after another at launch, and the serving ones go away when the
+    /// server stops, which should not shrink the window under the user.
+    private func fit(contentHeight: CGFloat) {
+        guard !UserDefaults.standard.bool(forKey: Self.userSizedKey), let panel,
+              let screen = panel.screen ?? NSScreen.main else { return }
+        let visible = screen.visibleFrame
+        let chrome = panel.frame.height - panel.contentLayoutRect.height
+        let height = min(ceil(contentHeight + chrome), visible.height)
+        guard height > panel.frame.height + 1 else { return }
+        var frame = panel.frame
+        frame.origin.y = frame.maxY - height
+        frame.size.height = height
+        if frame.minY < visible.minY { frame.origin.y = visible.minY }
+        if frame.maxY > visible.maxY { frame.origin.y = visible.maxY - height }
+        panel.setFrame(frame, display: true)
+    }
 }
 
 // MARK: - Views
@@ -62,11 +89,17 @@ struct StatsView: View {
     static let fadeHeight: CGFloat = 40
 
     @State private var moreBelow = false
+    /// Reports the content's height, so the panel can be sized to fit it.
+    var onContentHeight: (CGFloat) -> Void = { _ in }
 
     var body: some View {
         ScrollView {
             StatsContent(server: server, stats: stats)
                 .padding(.bottom, Self.edgeMargin)
+                // Reports the initial height too, unlike the scroll geometry callback.
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                    onContentHeight(height)
+                }
         }
         .onScrollGeometryChange(for: Bool.self) { geometry in
             // The visible rect is in content coordinates, so title bar and other insets
@@ -75,6 +108,7 @@ struct StatsView: View {
         } action: { _, hasMore in
             moreBelow = hasMore
         }
+
         // While content continues below the window edge, fade it out so the cut-off
         // card hints that the panel scrolls; at the end the last card shows in full.
         .mask {
@@ -105,7 +139,7 @@ extension EnvironmentValues {
 struct StatsContent: View {
     @ObservedObject var server: ServerController
     @ObservedObject var stats: StatsModel
-    @AppStorage("compactStatsPanel") private var compact = false
+    @AppStorage("compactStatsPanel") private var compact = true  // compact until chosen otherwise
 
     var body: some View {
             VStack(alignment: .leading, spacing: compact ? 8 : 14) {
@@ -132,7 +166,7 @@ struct StatsContent: View {
 private struct ServerHeader: View {
     @ObservedObject var server: ServerController
     @ObservedObject var stats: StatsModel
-    @AppStorage("compactStatsPanel") private var compact = false
+    @AppStorage("compactStatsPanel") private var compact = true  // compact until chosen otherwise
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {

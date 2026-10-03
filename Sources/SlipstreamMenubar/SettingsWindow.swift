@@ -132,8 +132,7 @@ private struct SettingsView: View {
                     TextField("Max memory", text: $config.maxMemory, prompt: Text("auto, e.g. 48G"))
                     VStack(alignment: .leading, spacing: 2) {
                         Toggle("Keep GGUF files after preparing", isOn: $config.keepGGUFFiles)
-                            .disabled(installation.map { !$0.supportsKeepGGUF } ?? false)
-                        Text(ggufNote(installation)).font(.caption).foregroundStyle(.secondary)
+                        Text(ggufNote).font(.caption).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -220,17 +219,10 @@ private struct SettingsView: View {
     }
 
     /// What the GPU limit step does on this Mac.
-    private func ggufNote(_ installation: SlipstreamInstallation?) -> String {
-        if let installation, !installation.supportsKeepGGUF {
-            return "\(installation.displayName) always keeps them: preparing a GGUF model then needs "
-                + "its size again on disk. Slipstream 26.10.4 or later uses them up instead."
-        }
-        return config.keepGGUFFiles
-            ? "A GGUF model's files stay next to the package prepared from them on its first start, "
-              + "which needs the model's size again on disk."
-            : "Preparing a GGUF model on its first start uses its files up as it converts them, so "
-              + "it needs little more disk than the model. Preparing again means downloading again."
-    }
+    private let ggufNote = "Preparing a GGUF model on its first start converts its downloaded files into "
+        + "Slipstream's format. Off, the files are used up as they are converted, so preparing needs little more "
+        + "disk space than the model. On, they are kept next to the prepared model, which needs the model's "
+        + "size again on disk."
 
     private var gpuNote: String {
         let current = GPUMemoryLimit.currentMB().map { $0 == 0 ? "the macOS default" : "\($0) MB" } ?? "unknown"

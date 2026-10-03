@@ -136,6 +136,9 @@ private struct SetupFooter: View {
             Button(primary.title, action: primary.action)
                 .keyboardShortcut(.defaultAction)
                 .disabled(!primary.enabled)
+                // A new button for each label: one button re-labelled keeps its focus ring at
+                // the old label's size (Continue → Install).
+                .id(primary.title)
         }
         .controlSize(.large)
     }

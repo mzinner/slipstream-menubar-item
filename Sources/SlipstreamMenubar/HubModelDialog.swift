@@ -95,6 +95,7 @@ struct HubModelDialog: View {
                 Button(primary.title, action: primary.action)
                     .keyboardShortcut(.defaultAction)
                     .disabled(!primary.enabled)
+                    .id(primary.title)  // the focus ring follows the label's size (Check → Use This Model)
             }
         }
         .padding(20)

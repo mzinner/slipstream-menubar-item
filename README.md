@@ -66,27 +66,38 @@ running server keeps its version until it restarts; the status then reads "resta
 
 ## Models
 
-**Download Model…** in the menu, and Settings → Model, offer the supported models:
+First-run setup, **Download Model…** in the menu, and Settings → Model offer the supported models:
 
-| Model | Download | Memory |
-|---|---|---|
-| Swift-Qwen3.8-Flash-Next V3 (GGUF, plus the shared MTP draft head) | 104.5 GB | 64 GB Mac |
-| Qwen3.8-Flash-Next V3 (GGUF) | 104.5 GB | 64 GB Mac |
+| Model | Format | Download | Memory |
+|---|---|---|---|
+| [Swift-Qwen3.8-Flash-Next V3](https://huggingface.co/MikeZ75/Swift-Qwen3.8-Flash-Next-V3-Splash) (default) | Splash Q4 | 107.7 GB | 64 GB Mac |
+| [Swift-Qwen3.8-Flash-Next V3](https://huggingface.co/nitinpanj/Swift-Qwen3.8-Flash-Next-Q4_0-Q8out-v3-GGUF) (plus the shared MTP draft head) | GGUF | 104.5 GB | 64 GB Mac |
+| [Qwen3.8-Flash-Next V3](https://huggingface.co/MikeZ75/Qwen3.8-Flash-Next-V3-Splash) | Splash Q4 | 107.7 GB | 64 GB Mac |
+| [Qwen3.8-Flash-Next V3](https://huggingface.co/nitinpanj/qwen38-flash-next-v3) | GGUF | 104.5 GB | 64 GB Mac |
 
-The Slipstream v2 engine loads only Qwen3.8-Flash-Next. Launchers up to v26.10.1 still list the
-Splash 1.0 packages `incoai/Qwen3.8-27B-Splash` and `Qwen3.6-35B-A3B-Splash`, which download and
-then fail with "unsupported weight format"; the next release refuses them before downloading.
+- **Splash Q4** (`splash-packed-q4-qwen4exp`) is Slipstream's own format, ready to run: the server
+  starts in about 15 seconds and the model needs no more disk than its download. These packages
+  are the GGUF models converted once and published on Hugging Face (license and credits as their
+  sources).
+- **GGUF** files are converted on the first start (about 4 minutes), which the Stats panel shows as
+  a progress bar. Slipstream 26.10.4 or later converts in place, using the downloaded files up as
+  it goes; Settings → *Keep GGUF files after preparing* keeps them instead, needing the model's
+  size again on disk.
 
-**New Model…** takes any Hugging Face id and checks it first: a ready-to-run Slipstream package
-in the format the engine loads (`splash-packed-q4-qwen4exp`), or GGUF files of the `qwen4exp` architecture (read from
-the first shard's header, without downloading it). Slipstream itself downloads the model
-(`slipstream pull <owner/repo>`, Slipstream 26.10.3 or later) into its model store,
+The Slipstream v2 engine loads only Qwen3.8-Flash-Next; Splash 1.0 packages such as
+`incoai/Qwen3.8-27B-Splash` are refused before downloading.
+
+**Adding a model:** Settings → Model has **Choose from disk…** (a folder with a model's GGUF files
+or a prepared package) and **Load from Hugging Face…**: paste the model's id, `owner/name`, or its
+page address. The repository is checked before anything is downloaded: by Slipstream itself
+(`slipstream pull <owner/repo> --check`) when it supports that, otherwise by the app. It must hold
+a Splash Q4 package or one `qwen4exp` model's GGUF files.
+
+Slipstream itself downloads the model (`slipstream pull <owner/repo>`) into its model store,
 `~/.slipstream/models/<owner>/<repo>`, the same folder `slipstream serve --model <owner/repo>`
-uses, so a model is downloaded once. It also fetches the MTP draft head a GGUF repository
-lacks. The window shows progress, speed and time left; at least 10 GB must stay free
-afterwards. GGUF models are converted on their first start, which the panel shows as a progress bar.
-On a 64 GB Mac the app raises `iogpu.wired_limit_mb` (Settings → Memory, default 59392) before
-each start.
+uses, so a model is downloaded once. It also fetches the MTP draft head a GGUF repository lacks.
+The window shows progress, speed and time left; at least 10 GB must stay free afterwards. On a
+64 GB Mac the app raises `iogpu.wired_limit_mb` (Settings → Memory, default 59392) before each start.
 
 ## Web UI
 
@@ -162,7 +173,7 @@ Keychain.
 | Setting | Passed as |
 |---|---|
 | Run | the installed release, or a source checkout at a given path |
-| Model | `--model`: one of the supported models, one added with New Model…, or a custom folder or Hub id |
+| Model | `--model`: one of the supported models, one added with Choose from disk… or Load from Hugging Face… |
 | Port | `--port` |
 | Max context | `--max-context` (empty = auto) |
 | Max memory | `--max-memory` (empty = auto) |

@@ -344,6 +344,8 @@ private struct ModelStep: View {
                                        badge: entry.badge, enabled: entry.isAvailable,
                                        selected: setup.selection == .entry(entry.id)) { setup.select(entry) }
                     }
+                    ModelChoiceRow(name: "Model from Hugging Face", detail: hubDetail, badge: nil, enabled: true,
+                                   selected: isHub) { setup.openHubDialog() }
                     ModelChoiceRow(name: "Other model", detail: otherDetail, badge: nil, enabled: true,
                                    selected: isFolder) { setup.chooseFolder() }
                 }
@@ -355,11 +357,22 @@ private struct ModelStep: View {
                 InlineError(message: error).padding(.vertical, 8)
             }
         }
+        .sheet(isPresented: $setup.hubDialogOpen) { HubModelDialog(setup: setup) }
     }
 
     private var isFolder: Bool {
         if case .folder = setup.selection { return true }
         return false
+    }
+
+    private var isHub: Bool {
+        if case .hub = setup.selection { return true }
+        return false
+    }
+
+    private var hubDetail: String {
+        if case .hub(let spec) = setup.selection { return spec.repository }
+        return "Choose a model from Hugging Face"
     }
 
     private var otherDetail: String {
@@ -477,5 +490,77 @@ private struct DownloadStatus: View {
 
     private func bytes(_ count: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: count, countStyle: .file)
+    }
+}
+
+/// "Model from Hugging Face": which id to paste, and New Model…'s check of it.
+private struct HubModelDialog: View {
+    @ObservedObject var setup: SetupCoordinator
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Model from Hugging Face").font(.headline)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Paste the model's Hugging Face id, **owner/name**: the part of its page address after huggingface.co/. For example:")
+                Text(verbatim: "nitinpanj/qwen38-flash-next-v3")
+                    .font(.body.monospaced())
+                    .textSelection(.enabled)
+                    .padding(.leading, 12)
+                Text(verbatim: "Its page address works too, e.g. https://huggingface.co/nitinpanj/qwen38-flash-next-v3.")
+                Text("Slipstream runs Qwen3.8-Flash-Next models: a repository of its GGUF files, or a "
+                     + "ready-to-run Slipstream package. The repository must be public.")
+                    .foregroundStyle(.secondary)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            TextField("Hugging Face model id", text: $setup.hubInput, prompt: Text(verbatim: "owner/name"))
+                .textFieldStyle(.roundedBorder)
+                .font(.body.monospaced())
+                .onSubmit { primary.action() }
+                .onChange(of: setup.hubInput) { setup.hubInputChanged() }
+            status
+                .frame(minHeight: 34, alignment: .topLeading)
+            HStack {
+                Spacer()
+                Button("Cancel") { setup.hubDialogOpen = false }
+                    .keyboardShortcut(.cancelAction)
+                Button(primary.title, action: primary.action)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!primary.enabled)
+            }
+        }
+        .padding(20)
+        .frame(width: 480)
+    }
+
+    private var primary: (title: String, enabled: Bool, action: () -> Void) {
+        switch setup.hubCheck {
+        case .suitable: return ("Use This Model", true, setup.useHubModel)
+        case .checking: return ("Check", false, {})
+        default:
+            return ("Check", !setup.hubInput.trimmingCharacters(in: .whitespaces).isEmpty, setup.checkHubModel)
+        }
+    }
+
+    @ViewBuilder private var status: some View {
+        switch setup.hubCheck {
+        case .idle:
+            EmptyView()
+        case .checking:
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("Checking on Hugging Face…").foregroundStyle(.secondary)
+            }
+        case .unsuitable(let reason):
+            InlineError(message: reason)
+        case .suitable(let model, let size):
+            Label {
+                Text((model.kind == .package ? "A ready-to-run package" : "GGUF files, prepared on the first start")
+                     + ", \(ByteCountFormatter.string(fromByteCount: size, countStyle: .file)), needs a \(model.memoryNote).")
+                    .fixedSize(horizontal: false, vertical: true)
+            } icon: {
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+            }
+            .font(.callout)
+        }
     }
 }

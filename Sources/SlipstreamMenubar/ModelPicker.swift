@@ -33,9 +33,7 @@ final class ModelPicker: ObservableObject {
     /// Whether a pasted repository is something Slipstream can serve: a package in a
     /// format the launcher reads, or Qwen3.8-Flash-Next GGUF shards the converter takes.
     func checkNewModel() {
-        let repository = newRepository.trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: "https://huggingface.co/", with: "")
-        guard repository.range(of: #"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"#, options: .regularExpression) != nil else {
+        guard let repository = HubModelID.parse(newRepository) else {
             newModelState = .unsuitable("Enter a Hugging Face model id like owner/name.")
             return
         }
@@ -43,7 +41,8 @@ final class ModelPicker: ObservableObject {
         Task { newModelState = await Self.check(repository) }
     }
 
-    private static func check(_ repository: String) async -> NewModelState {
+    /// Also setup's "Model from Hugging Face".
+    static func check(_ repository: String) async -> NewModelState {
         guard let treeURL = URL(string: "https://huggingface.co/api/models/\(repository)/tree/main?recursive=true"),
               let (tree, response) = try? await URLSession.shared.data(from: treeURL) else {
             return .unsuitable("Hugging Face could not be reached.")

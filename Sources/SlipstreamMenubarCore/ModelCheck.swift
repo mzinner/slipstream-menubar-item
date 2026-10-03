@@ -151,3 +151,24 @@ public enum GGUFHeader {
         }
     }
 }
+
+/// A Hugging Face model id from what a user pastes: `owner/name`, or the model's page
+/// address (`https://huggingface.co/owner/name`, also `hf.co/…`, with or without
+/// `/tree/main`, `/blob/main/<file>` or a query). Datasets and Spaces are not models.
+public enum HubModelID {
+    public static func parse(_ input: String) -> String? {
+        var text = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let range = text.range(of: #"^(https?://)?(www\.)?(huggingface\.co|hf\.co)/"#,
+                                  options: [.regularExpression, .caseInsensitive]) {
+            text.removeSubrange(range)
+        }
+        text = String(text.prefix { $0 != "?" && $0 != "#" })
+        let parts = text.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        guard parts.count >= 2, !["datasets", "spaces", "models"].contains(parts[0].lowercased()),
+              parts.count == 2 || ["tree", "blob", "resolve", ""].contains(parts[2]) else { return nil }
+        let id = parts[0] + "/" + parts[1]
+        guard id.range(of: #"^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$"#,
+                       options: .regularExpression) != nil else { return nil }
+        return id
+    }
+}

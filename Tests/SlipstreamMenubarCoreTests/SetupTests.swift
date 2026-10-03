@@ -157,3 +157,23 @@ private extension Result {
         return nil
     }
 }
+
+final class HubModelIDTests: XCTestCase {
+    func testAnIdOrTheModelPageAddressIsAccepted() {
+        let id = "nitinpanj/qwen38-flash-next-v3"
+        for input in [id, "  \(id)\n", "https://huggingface.co/\(id)", "huggingface.co/\(id)",
+                      "https://hf.co/\(id)", "https://huggingface.co/\(id)/", "https://huggingface.co/\(id)/tree/main",
+                      "https://huggingface.co/\(id)/blob/main/README.md", "https://huggingface.co/\(id)?library=gguf",
+                      "HTTPS://HuggingFace.co/\(id)"] {
+            XCTAssertEqual(HubModelID.parse(input), id, input)
+        }
+    }
+
+    func testAnythingElseIsRefused() {
+        for input in ["", "qwen38-flash-next-v3", "https://huggingface.co/datasets/owner/name",
+                      "https://huggingface.co/spaces/owner/name", "owner/name/extra", "owner name/x",
+                      "https://example.com/owner/name", "/owner/name"] {
+            XCTAssertNil(HubModelID.parse(input), input)
+        }
+    }
+}

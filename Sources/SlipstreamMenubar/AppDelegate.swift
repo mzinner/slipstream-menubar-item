@@ -98,6 +98,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                    let step = SetupStep(rawValue: number - 1) {
                     self.setup.coordinator.step = step
                 }
+                // Development aid: the Model step's Hugging Face dialog, checking the given id.
+                if let index = CommandLine.arguments.firstIndex(of: "--setup-hub"),
+                   CommandLine.arguments.indices.contains(index + 1) {
+                    self.setup.coordinator.step = .model
+                    self.setup.coordinator.openHubDialog(input: CommandLine.arguments[index + 1])
+                    self.setup.coordinator.checkHubModel()
+                }
             } else {
                 self.setup.coordinator.completeSilently()
                 if self.server.config.startServerOnLaunch, !self.server.status.isActive {

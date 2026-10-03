@@ -6,9 +6,11 @@ import SlipstreamMenubarCore
 /// download keeps running when the window is closed, and the window reopens where it was.
 @MainActor
 final class SetupCoordinator: ObservableObject {
-    /// A model choice: a manifest entry, or a folder of the user's own.
+    /// A model choice: a manifest entry, a Hugging Face repository the user named and
+    /// that passed the check, or a folder of the user's own.
     enum Selection: Equatable {
         case entry(String)
+        case hub(ModelSpec)
         case folder(URL)
     }
 
@@ -26,6 +28,10 @@ final class SetupCoordinator: ObservableObject {
     @Published var modelError: String?
     @Published private(set) var checkingDisk = false
     @Published private(set) var downloader: ModelDownloader?
+    /// The "Model from Hugging Face" dialog.
+    @Published var hubDialogOpen = false
+    @Published var hubInput = ""
+    @Published private(set) var hubCheck: ModelPicker.NewModelState = .idle
     @Published var startError: String?
     @Published private(set) var starting = false
 
@@ -76,6 +82,8 @@ final class SetupCoordinator: ObservableObject {
         let model = server.config.model.trimmingCharacters(in: .whitespaces)
         if let entry = manifest.models.first(where: { $0.repository == model && $0.isAvailable }) {
             selection = .entry(entry.id)
+        } else if let custom = server.config.customModels.first(where: { $0.repository == model }) {
+            selection = .hub(custom)
         } else if model.hasPrefix("/") || model.hasPrefix("~") {
             selection = .folder(URL(fileURLWithPath: (model as NSString).expandingTildeInPath))
         }
@@ -184,6 +192,7 @@ final class SetupCoordinator: ObservableObject {
     var modelName: String {
         switch selection {
         case .entry(let id): return manifest.entry(id: id)?.name ?? id
+        case .hub(let spec): return spec.repository
         case .folder(let url): return url.lastPathComponent
         }
     }
@@ -213,10 +222,63 @@ final class SetupCoordinator: ObservableObject {
         selection = .folder(url)
     }
 
+    // MARK: Model from Hugging Face
+
+    func openHubDialog(input: String? = nil) {
+        if let input {
+            hubInput = input
+        } else if case .hub(let spec) = selection {
+            hubInput = spec.repository
+        }
+        hubCheckedInput = hubInput
+        hubCheck = .idle
+        hubDialogOpen = true
+    }
+
+    /// Checks the pasted id the way New Model… does: a Slipstream package, or
+    /// Qwen3.8-Flash-Next GGUF files.
+    func checkHubModel() {
+        guard let repository = HubModelID.parse(hubInput) else {
+            hubCheck = .unsuitable("That is not a Hugging Face model id. Enter it as owner/name, "
+                + "or paste the model page's address.")
+            return
+        }
+        hubInput = repository
+        hubCheckedInput = repository
+        hubCheck = .checking
+        hubCheckNumber += 1
+        let number = hubCheckNumber
+        Task {
+            let result = await ModelPicker.check(repository)
+            // A newer check, or an edit since, wins.
+            if number == hubCheckNumber { hubCheck = result }
+        }
+    }
+
+    private var hubCheckNumber = 0
+    private var hubCheckedInput = ""
+
+    /// An edit makes an earlier result stale.
+    func hubInputChanged() {
+        guard hubInput != hubCheckedInput else { return }
+        hubCheckedInput = hubInput
+        if case .checking = hubCheck { return }
+        hubCheck = .idle
+    }
+
+    /// Takes the checked model; it is kept in Settings next to the catalog.
+    func useHubModel() {
+        guard case .suitable(let spec, _) = hubCheck else { return }
+        modelError = nil
+        selection = .hub(spec)
+        hubDialogOpen = false
+    }
+
     /// Already on disk: "Continue" rather than "Download and continue".
     var selectionIsOnDisk: Bool {
         switch selection {
         case .folder: return true
+        case .hub(let spec): return ModelStore.isDownloaded(spec.repository)
         case .entry(let id):
             guard let repository = manifest.entry(id: id)?.repository else { return false }
             return ModelStore.isDownloaded(repository)
@@ -232,8 +294,18 @@ final class SetupCoordinator: ObservableObject {
         case .folder(let url):
             use(model: url.path)
             step = .server
-        case .entry(let id):
-            guard let spec = manifest.entry(id: id)?.spec else { return }
+        case .entry, .hub:
+            let spec: ModelSpec
+            switch selection {
+            case .hub(let custom):
+                spec = custom
+                addCustomModel(custom)
+            case .entry(let id):
+                guard let entry = manifest.entry(id: id)?.spec else { return }
+                spec = entry
+            case .folder:
+                return
+            }
             use(model: spec.repository)
             if ModelStore.isDownloaded(spec.repository) || downloader?.model == spec && downloader?.phase.isRunning == true {
                 step = .server
@@ -245,6 +317,14 @@ final class SetupCoordinator: ObservableObject {
             }
             Task { await checkDiskAndDownload(spec, installation: installation) }
         }
+    }
+
+    /// Settings lists it, as it does New Model…'s.
+    private func addCustomModel(_ spec: ModelSpec) {
+        guard !server.config.availableModels.contains(where: { $0.repository == spec.repository }) else { return }
+        var config = server.config
+        config.customModels.append(spec)
+        saveConfig(config)
     }
 
     private func use(model: String) {

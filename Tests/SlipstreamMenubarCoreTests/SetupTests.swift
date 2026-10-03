@@ -13,30 +13,41 @@ final class ModelManifestTests: XCTestCase {
         XCTAssertEqual(decoded, ModelManifest.builtIn)
     }
 
-    func testSwiftIsTheDefaultAndTheConvertedOneIsComingSoon() throws {
+    func testTheSwiftPackageIsTheDefaultAndTheBasePackageIsComingSoon() throws {
         let manifest = ModelManifest.builtIn
-        XCTAssertEqual(manifest.defaultEntry?.id, "swift-v3")
-        XCTAssertEqual(manifest.setupEntries.map(\.id), ["swift-v3", "qwen38-v3", "swift-v3-converted"])
-        let converted = try XCTUnwrap(manifest.entry(id: "swift-v3-converted"))
-        XCTAssertFalse(converted.isAvailable)
-        XCTAssertNil(converted.spec)
-        XCTAssertEqual(converted.detail(memoryGiB: 64), "Available soon")
-        XCTAssertEqual(manifest.catalog, [ModelSpec.swiftQwen38FlashNext, ModelSpec.qwen38FlashNext],
-                       "Settings offers what is available, in the manifest's order")
+        XCTAssertEqual(manifest.defaultEntry?.id, "swift-v3-converted")
+        XCTAssertEqual(manifest.defaultEntry?.spec?.kind, .package, "ready to run: nothing to convert")
+        XCTAssertEqual(manifest.setupEntries.map(\.id),
+                       ["swift-v3-converted", "swift-v3", "qwen38-v3-converted", "qwen38-v3"])
+        let base = try XCTUnwrap(manifest.entry(id: "qwen38-v3-converted"))
+        XCTAssertFalse(base.isAvailable)
+        XCTAssertNil(base.spec)
+        XCTAssertEqual(base.detail(memoryGiB: 64), "Available soon")
+        XCTAssertEqual(manifest.catalog.map(\.repository), [
+            "MikeZ75/Swift-Qwen3.8-Flash-Next-V3-Splash",
+            "nitinpanj/Swift-Qwen3.8-Flash-Next-Q4_0-Q8out-v3-GGUF",
+            "nitinpanj/qwen38-flash-next-v3",
+        ], "Settings offers what is available, in the manifest's order")
         XCTAssertEqual(ModelSpec.swiftQwen38FlashNext.extraFiles, [ModelSpec.mtpDraftHead])
     }
 
-    func testMakingTheConvertedModelAvailableAndDefaultIsAManifestEdit() throws {
-        var json = try String(contentsOf: resourceURL, encoding: .utf8)
-        json = json.replacingOccurrences(of: #""isDefault": true"#, with: #""isDefault": false"#)
-        json = json.replacingOccurrences(
-            of: #""kind": "package","#,
-            with: #""kind": "package", "repository": "someone/Swift-Splash", "isDefault": true,"#)
-        json = json.replacingOccurrences(of: #""availability": "comingSoon""#, with: #""availability": "available""#)
-        let manifest = try JSONDecoder().decode(ModelManifest.self, from: Data(json.utf8))
-        XCTAssertEqual(manifest.defaultEntry?.id, "swift-v3-converted")
+    func testMakingAModelAvailableAndDefaultIsAManifestEdit() throws {
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: resourceURL)) as? [String: Any])
+        var models = try XCTUnwrap(object["models"] as? [[String: Any]])
+        for index in models.indices {
+            models[index]["isDefault"] = false
+            if models[index]["id"] as? String == "qwen38-v3-converted" {
+                models[index]["repository"] = "MikeZ75/Qwen3.8-Flash-Next-V3-Splash"
+                models[index]["availability"] = "available"
+                models[index]["isDefault"] = true
+            }
+        }
+        object["models"] = models
+        let manifest = try JSONDecoder().decode(ModelManifest.self,
+                                                from: JSONSerialization.data(withJSONObject: object))
+        XCTAssertEqual(manifest.defaultEntry?.id, "qwen38-v3-converted")
         XCTAssertEqual(manifest.defaultEntry?.spec?.kind, .package)
-        XCTAssertTrue(manifest.catalog.contains { $0.repository == "someone/Swift-Splash" })
+        XCTAssertTrue(manifest.catalog.contains { $0.repository == "MikeZ75/Qwen3.8-Flash-Next-V3-Splash" })
     }
 
     func testMemoryDecidesTheMetadataLineButNotSelectability() throws {

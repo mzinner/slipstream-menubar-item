@@ -36,6 +36,11 @@ public struct ServerConfig: Codable, Equatable, Sendable {
     /// Keep a downloaded GGUF model's files once it is prepared (`--keep-gguf`). Off, the
     /// first start uses them up while converting, so it needs little more disk than the model.
     public var keepGGUFFiles: Bool
+    /// A Slipstream release outside `~/.local`, chosen in setup: its `bin/slipstream`.
+    /// Searched before `~/.local/bin` and PATH.
+    public var slipstreamPath: String
+    /// Setup ran to the end (or was not needed): it no longer opens at launch.
+    public var setupCompleted: Bool
 
     public static let defaultReleaseRepository = "mzinner/slipstream"
 
@@ -55,7 +60,9 @@ public struct ServerConfig: Codable, Equatable, Sendable {
         raiseGPULimit: Bool = true,
         gpuWiredLimitMB: Int = GPUMemoryLimit.recommendedMB,
         customModels: [ModelSpec] = [],
-        keepGGUFFiles: Bool = false
+        keepGGUFFiles: Bool = false,
+        slipstreamPath: String = "",
+        setupCompleted: Bool = false
     ) {
         self.useCheckout = useCheckout
         self.repoPath = repoPath
@@ -73,6 +80,8 @@ public struct ServerConfig: Codable, Equatable, Sendable {
         self.gpuWiredLimitMB = gpuWiredLimitMB
         self.customModels = customModels
         self.keepGGUFFiles = keepGGUFFiles
+        self.slipstreamPath = slipstreamPath
+        self.setupCompleted = setupCompleted
     }
 
     /// Settings saved by an older version lack newer keys; those take their defaults.
@@ -99,6 +108,8 @@ public struct ServerConfig: Codable, Equatable, Sendable {
         gpuWiredLimitMB = try container.decodeIfPresent(Int.self, forKey: .gpuWiredLimitMB) ?? defaults.gpuWiredLimitMB
         customModels = (try? container.decodeIfPresent([ModelSpec].self, forKey: .customModels)) ?? defaults.customModels
         keepGGUFFiles = try container.decodeIfPresent(Bool.self, forKey: .keepGGUFFiles) ?? defaults.keepGGUFFiles
+        slipstreamPath = try container.decodeIfPresent(String.self, forKey: .slipstreamPath) ?? defaults.slipstreamPath
+        setupCompleted = try container.decodeIfPresent(Bool.self, forKey: .setupCompleted) ?? defaults.setupCompleted
     }
 
     /// The catalog, then the models added with "New Model…" (not repeating any).

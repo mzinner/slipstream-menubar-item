@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var modelWindow: ModelWindowController!
     private var uninstaller: UninstallWindowController!
     private var updater: AppUpdateWindowController!
+    private var setup: SetupWindowController!
     private var pollTask: Task<Void, Never>?
     private var menuOpen = false
 
@@ -38,6 +39,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onDownloaded: { [weak self] model in self?.useDownloadedModel(model) },
             startServer: { [weak self] in self?.start() },
             openSettings: { [weak self] in self?.settings.show() })
+        setup = SetupWindowController(coordinator: SetupCoordinator(
+            server: server,
+            saveConfig: { [weak self] config in self?.saveConfig(config) },
+            startServer: { [weak self] in self?.startServer() },
+            openSettings: { [weak self] in self?.settings.show() }))
         settings = SettingsWindowController(
             server: server,
             save: { [weak self] config, key, restart in self?.apply(config, apiKey: key, restart: restart) },
@@ -45,7 +51,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             downloadModel: { [weak self] model in
                 if let model { self?.modelWindow.show(model: model) } else { self?.modelWindow.show(newModel: true) }
             },
-            uninstall: { [weak self] in self?.uninstaller.show() })
+            uninstall: { [weak self] in self?.uninstaller.show() },
+            runSetup: { [weak self] in self?.setup.show() })
         menu = MenuController(server: server, actions: .init(
             start: { [weak self] in self?.start() },
             stop: { [weak self] in self?.server.stop(); self?.menu.update() },
@@ -81,8 +88,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             await self.tick()
             // A slipstream that only the login shell's PATH reaches, e.g. Homebrew's.
             await self.server.learnLoginShellPath()
-            if self.server.config.startServerOnLaunch, !self.server.status.isActive {
-                self.start()
+            // First run: setup, while Slipstream or a model is missing.
+            if self.setup.coordinator.isNeeded || CommandLine.arguments.contains("--setup") {
+                self.setup.show()
+                // Development aid: open setup at a step (1–4), for screenshots.
+                if let index = CommandLine.arguments.firstIndex(of: "--setup-step"),
+                   CommandLine.arguments.indices.contains(index + 1),
+                   let number = Int(CommandLine.arguments[index + 1]),
+                   let step = SetupStep(rawValue: number - 1) {
+                    self.setup.coordinator.step = step
+                }
+            } else {
+                self.setup.coordinator.completeSilently()
+                if self.server.config.startServerOnLaunch, !self.server.status.isActive {
+                    self.start()
+                }
             }
             while !Task.isCancelled {
                 // At most once a day; a cheap date comparison otherwise.
@@ -91,8 +111,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 await self.tick()
             }
         }
-        updater.updater.canQuit = { [weak self] in self?.modelWindow.confirmQuit() ?? true }
-        if server.config.model.isEmpty { settings.show() }
+        updater.updater.canQuit = { [weak self] in
+            (self?.modelWindow.confirmQuit() ?? true) && (self?.setup.coordinator.confirmQuit() ?? true)
+        }
         // Development aids: the update window with a check, or a check that installs
         // whatever newer version it finds without asking.
         if CommandLine.arguments.contains("--check-updates") { updater.show(check: true) }
@@ -115,7 +136,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         if UpdateQuit.approved { return .terminateNow }
-        return modelWindow.confirmQuit() ? .terminateNow : .terminateCancel
+        return modelWindow.confirmQuit() && setup.coordinator.confirmQuit() ? .terminateNow : .terminateCancel
     }
 
     private func updateWithoutAsking() {
@@ -152,14 +173,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func start() {
+        if let reason = startServer() { alert("The server could not be started", reason) }
+    }
+
+    /// Starts the server; returns why it could not, or nil.
+    private func startServer() -> String? {
         server.acknowledgeFailure()
-        guard raiseGPULimitIfNeeded() else { return }
+        defer { menu.update() }
+        guard raiseGPULimitIfNeeded() else { return "The GPU memory limit was not raised." }
         do {
             try server.start()
+            return nil
         } catch {
-            alert("The server could not be started", error.localizedDescription)
+            return error.localizedDescription
         }
-        menu.update()
     }
 
     /// On a 64 GB Mac, sets `iogpu.wired_limit_mb` before a start: macOS keeps it near

@@ -71,6 +71,12 @@ final class ReleaseInstaller: ObservableObject {
         task?.cancel()
     }
 
+    /// The version `start` would install ("26.10.4"), or nil when GitHub cannot say.
+    func latestVersion() async -> String? {
+        guard let tag = try? await latestRelease().tag else { return nil }
+        return tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
+    }
+
     // MARK: Steps
 
     private func install() async throws -> String {

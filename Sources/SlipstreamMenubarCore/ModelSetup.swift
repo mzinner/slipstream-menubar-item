@@ -83,21 +83,17 @@ public struct ModelSpec: Codable, Equatable, Sendable {
     public static let mtpDraftHead = ExtraFile(repository: "nitinpanj/qwen38-flash-next-v3",
                                                path: "MTP/mtp-shared-Q4_K_M.gguf")
 
-    public static let swiftQwen38FlashNext = ModelSpec(
-        repository: "nitinpanj/Swift-Qwen3.8-Flash-Next-Q4_0-Q8out-v3-GGUF",
-        title: "Swift-Qwen3.8-Flash-Next V3",
-        extraFiles: [mtpDraftHead])
+    /// The setup's default: Swift V3, which drafts with the base model's MTP head.
+    public static var swiftQwen38FlashNext: ModelSpec { ModelManifest.builtIn.entry(id: "swift-v3")!.spec! }
 
     /// The README's alternative: the dense base model, which ships its MTP head.
-    public static let qwen38FlashNext = ModelSpec(
-        repository: "nitinpanj/qwen38-flash-next-v3",
-        title: "Qwen3.8-Flash-Next V3")
+    public static var qwen38FlashNext: ModelSpec { ModelManifest.builtIn.entry(id: "qwen38-v3")!.spec! }
 
-    /// The models the app offers. The Slipstream v2 engine loads only Qwen3.8-Flash-Next
-    /// (`splash-packed-q4-qwen4exp`, runtime/model/ModelDescriptor.mm): the
+    /// The models the app offers, from the model manifest. The Slipstream v2 engine loads only
+    /// Qwen3.8-Flash-Next (`splash-packed-q4-qwen4exp`, runtime/model/ModelDescriptor.mm): the
     /// incoai/Qwen3.8-27B-Splash and Qwen3.6-35B-A3B-Splash packages that its launcher still
     /// lists (inherited from Splash 1.0) fail with "unsupported weight format".
-    public static let catalog: [ModelSpec] = [swiftQwen38FlashNext, qwen38FlashNext]
+    public static var catalog: [ModelSpec] { ModelManifest.bundled.catalog }
 
     /// The catalog or custom model a configured model names: its Hub id, or its folder.
     public static func matching(model: String, in models: [ModelSpec]) -> ModelSpec? {
@@ -128,7 +124,7 @@ public struct ModelSpec: Codable, Equatable, Sendable {
     public static var `default`: ModelSpec {
         let environment = ProcessInfo.processInfo.environment
         guard let repository = environment["SLIPSTREAM_MENUBAR_MODEL_REPO"], !repository.isEmpty else {
-            return .swiftQwen38FlashNext
+            return ModelManifest.bundled.defaultEntry?.spec ?? .swiftQwen38FlashNext
         }
         // SLIPSTREAM_MENUBAR_MODEL_EXTRA=owner/repo:path adds one extra file, like the MTP head.
         let extra = environment["SLIPSTREAM_MENUBAR_MODEL_EXTRA"]?.split(separator: ":", maxSplits: 1)

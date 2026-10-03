@@ -12,16 +12,18 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     private let install: () -> Void
     private let downloadModel: (ModelSpec?) -> Void
     private let uninstall: () -> Void
+    private let runSetup: () -> Void
 
     /// `downloadModel(nil)` opens the download window at New Model…
     init(server: ServerController, save: @escaping (ServerConfig, String?, Bool) -> Void,
          install: @escaping () -> Void, downloadModel: @escaping (ModelSpec?) -> Void,
-         uninstall: @escaping () -> Void) {
+         uninstall: @escaping () -> Void, runSetup: @escaping () -> Void) {
         self.server = server
         self.save = save
         self.install = install
         self.downloadModel = downloadModel
         self.uninstall = uninstall
+        self.runSetup = runSetup
     }
 
     func show() {
@@ -34,6 +36,10 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             uninstall: { [weak self] in
                 self?.window?.close()
                 self?.uninstall()
+            },
+            runSetup: { [weak self] in
+                self?.window?.close()
+                self?.runSetup()
             },
             onSave: { [weak self] config, key, restart in
                 self?.save(config, key.isEmpty ? nil : key, restart)
@@ -66,6 +72,7 @@ private struct SettingsView: View {
     let install: () -> Void
     let downloadModel: (ModelSpec?) -> Void
     let uninstall: () -> Void
+    let runSetup: () -> Void
     let onSave: (ServerConfig, String, Bool) -> Void
     let onCancel: () -> Void
 
@@ -78,7 +85,7 @@ private struct SettingsView: View {
     init(config: ServerConfig, apiKey: String, serverActive: Bool,
          server: ServerController, install: @escaping () -> Void,
          downloadModel: @escaping (ModelSpec?) -> Void, uninstall: @escaping () -> Void,
-         onSave: @escaping (ServerConfig, String, Bool) -> Void, onCancel: @escaping () -> Void) {
+         runSetup: @escaping () -> Void, onSave: @escaping (ServerConfig, String, Bool) -> Void, onCancel: @escaping () -> Void) {
         _config = State(initialValue: config)
         _apiKey = State(initialValue: apiKey)
         _allowedHosts = State(initialValue: config.allowedHosts.joined(separator: ", "))
@@ -89,6 +96,7 @@ private struct SettingsView: View {
         self.install = install
         self.downloadModel = downloadModel
         self.uninstall = uninstall
+        self.runSetup = runSetup
         self.onSave = onSave
         self.onCancel = onCancel
     }
@@ -172,6 +180,7 @@ private struct SettingsView: View {
                     }
                     Text("Quitting the app leaves the server running.")
                         .font(.caption).foregroundStyle(.secondary)
+                    Button("Run setup again…", action: runSetup)
                 }
                 SwiftUI.Section("Uninstall and Cleanup") {
                     DownloadedModels(server: server)

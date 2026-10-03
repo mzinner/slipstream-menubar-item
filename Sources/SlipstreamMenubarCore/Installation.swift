@@ -47,6 +47,49 @@ public struct SlipstreamInstallation: Equatable, Sendable {
         return source?.contains("\"--keep-gguf\"") ?? false
     }
 
+    /// The Slipstream a user points setup at: its `slipstream` executable, a release's folder
+    /// (`<root>/bin/slipstream`) or a checkout's. Too old to download models is refused too.
+    public static func chosen(_ url: URL, fileManager: FileManager = .default) -> Result<SlipstreamInstallation, ChoiceError> {
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory) else { return .failure(.notFound) }
+        let executables = isDirectory.boolValue
+            ? [url.appendingPathComponent("bin/slipstream"), url.appendingPathComponent("slipstream")]
+            : [url]
+        guard let installation = executables.lazy.compactMap({ at(executable: $0, fileManager: fileManager) }).first
+        else { return .failure(.notFound) }
+        guard installation.supportsPull else { return .failure(.tooOld(installation.displayName)) }
+        return .success(installation)
+    }
+
+    public enum ChoiceError: Error, Equatable, LocalizedError {
+        case notFound
+        case tooOld(String)
+
+        public var errorDescription: String? {
+            switch self {
+            case .notFound:
+                return "That folder doesn't contain Slipstream. Choose the folder where it's installed."
+            case .tooOld(let name):
+                return "\(name) is too old for this app: it needs Slipstream 26.10.3 or later, which can download models."
+            }
+        }
+    }
+
+    /// Settings that run this installation.
+    public func applied(to config: ServerConfig) -> ServerConfig {
+        var config = config
+        switch kind {
+        case .checkout:
+            config.useCheckout = true
+            config.repoPath = root.path
+            config.slipstreamPath = ""
+        case .release:
+            config.useCheckout = false
+            config.slipstreamPath = launcher.path
+        }
+        return config
+    }
+
     public var displayName: String {
         switch kind {
         case .release: return "Slipstream \(version ?? "release")"
@@ -124,6 +167,11 @@ public enum InstallationLocator {
                             fileManager: FileManager = .default) -> SlipstreamInstallation? {
         if config.useCheckout {
             return SlipstreamInstallation.checkout(at: config.repoURL, fileManager: fileManager)
+        }
+        let chosen = config.slipstreamPath.trimmingCharacters(in: .whitespaces)
+        if !chosen.isEmpty, let installation = SlipstreamInstallation.at(
+            executable: URL(fileURLWithPath: (chosen as NSString).expandingTildeInPath), fileManager: fileManager) {
+            return installation
         }
         let candidates = [binDirectory.path] + searchPath
         var seen = Set<String>()

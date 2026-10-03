@@ -125,10 +125,10 @@ public struct ModelManifest: Codable, Equatable, Sendable {
               repository: "nitinpanj/Swift-Qwen3.8-Flash-Next-Q4_0-Q8out-v3-GGUF",
               extraFiles: [ModelSpec.mtpDraftHead], sizeBytes: 104_468_009_728,
               badge: "Recommended", isDefault: true),
+        Entry(id: "qwen38-v3", name: "Qwen3.8-Flash-Next", title: "Qwen3.8-Flash-Next V3",
+              repository: "nitinpanj/qwen38-flash-next-v3", sizeBytes: 104_475_874_048),
         Entry(id: "swift-v3-converted", name: "Swift (converted)", title: "Swift-Qwen3.8-Flash-Next V3 (converted)",
               repository: nil, kind: .package, sizeBytes: 107_189_682_176, availability: .comingSoon,
               badge: "Soon"),
-        Entry(id: "qwen38-v3", name: "Qwen3.8-Flash-Next", title: "Qwen3.8-Flash-Next V3",
-              repository: "nitinpanj/qwen38-flash-next-v3", sizeBytes: 104_475_874_048, inSetup: false),
     ])
 }

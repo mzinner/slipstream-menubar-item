@@ -336,17 +336,23 @@ private struct ModelStep: View {
         VStack(alignment: .leading, spacing: 0) {
             Hero(symbol: "archivebox", title: "Choose a model",
                  subtitle: "You can add more models later in Settings.")
-            VStack(spacing: 8) {
-                ForEach(setup.manifest.setupEntries) { entry in
-                    ModelChoiceRow(name: entry.name, detail: entry.detail(memoryGiB: MachineCheck.memoryGiB),
-                                   badge: entry.badge, enabled: entry.isAvailable,
-                                   selected: setup.selection == .entry(entry.id)) { setup.select(entry) }
+            // As many models as the manifest lists: the cards scroll in the space above the footer.
+            ScrollView {
+                VStack(spacing: 8) {
+                    ForEach(setup.manifest.setupEntries) { entry in
+                        ModelChoiceRow(name: entry.name, detail: entry.detail(memoryGiB: MachineCheck.memoryGiB),
+                                       badge: entry.badge, enabled: entry.isAvailable,
+                                       selected: setup.selection == .entry(entry.id)) { setup.select(entry) }
+                    }
+                    ModelChoiceRow(name: "Other model", detail: otherDetail, badge: nil, enabled: true,
+                                   selected: isFolder) { setup.chooseFolder() }
                 }
-                ModelChoiceRow(name: "Other model", detail: otherDetail, badge: nil, enabled: true,
-                               selected: isFolder) { setup.chooseFolder() }
+                .padding(1)  // the selected card's border is not clipped
             }
+            .scrollBounceBehavior(.basedOnSize)
+            .padding(.bottom, setup.modelError == nil ? 16 : 0)
             if let error = setup.modelError {
-                InlineError(message: error).padding(.top, 8)
+                InlineError(message: error).padding(.vertical, 8)
             }
         }
     }

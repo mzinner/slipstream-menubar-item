@@ -16,7 +16,7 @@ final class ModelManifestTests: XCTestCase {
     func testSwiftIsTheDefaultAndTheConvertedOneIsComingSoon() throws {
         let manifest = ModelManifest.builtIn
         XCTAssertEqual(manifest.defaultEntry?.id, "swift-v3")
-        XCTAssertEqual(manifest.setupEntries.map(\.id), ["swift-v3", "swift-v3-converted"])
+        XCTAssertEqual(manifest.setupEntries.map(\.id), ["swift-v3", "qwen38-v3", "swift-v3-converted"])
         let converted = try XCTUnwrap(manifest.entry(id: "swift-v3-converted"))
         XCTAssertFalse(converted.isAvailable)
         XCTAssertNil(converted.spec)

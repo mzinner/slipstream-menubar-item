@@ -7,13 +7,29 @@
       "title": "Swift-Qwen3.8-Flash-Next V3",
       "repository": "nitinpanj/Swift-Qwen3.8-Flash-Next-Q4_0-Q8out-v3-GGUF",
       "kind": "gguf",
-      "extraFiles": [{"repository": "nitinpanj/qwen38-flash-next-v3", "path": "MTP/mtp-shared-Q4_K_M.gguf"}],
+      "extraFiles": [
+        {
+          "repository": "nitinpanj/qwen38-flash-next-v3",
+          "path": "MTP/mtp-shared-Q4_K_M.gguf"
+        }
+      ],
       "sizeBytes": 104468009728,
       "minimumMemoryGiB": 64,
       "recommendedMemoryGiB": 64,
       "availability": "available",
       "badge": "Recommended",
       "isDefault": true
+    },
+    {
+      "id": "qwen38-v3",
+      "name": "Qwen3.8-Flash-Next",
+      "title": "Qwen3.8-Flash-Next V3",
+      "repository": "nitinpanj/qwen38-flash-next-v3",
+      "kind": "gguf",
+      "sizeBytes": 104475874048,
+      "minimumMemoryGiB": 64,
+      "recommendedMemoryGiB": 64,
+      "availability": "available"
     },
     {
       "id": "swift-v3-converted",
@@ -25,18 +41,6 @@
       "recommendedMemoryGiB": 64,
       "availability": "comingSoon",
       "badge": "Soon"
-    },
-    {
-      "id": "qwen38-v3",
-      "name": "Qwen3.8-Flash-Next",
-      "title": "Qwen3.8-Flash-Next V3",
-      "repository": "nitinpanj/qwen38-flash-next-v3",
-      "kind": "gguf",
-      "sizeBytes": 104475874048,
-      "minimumMemoryGiB": 64,
-      "recommendedMemoryGiB": 64,
-      "availability": "available",
-      "inSetup": false
     }
   ]
 }

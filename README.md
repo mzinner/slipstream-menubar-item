@@ -17,7 +17,18 @@ tokens per second (incoming) over ↑ output tokens per second (outgoing).
 
 ## Download
 
-From the [latest release](https://github.com/mzinner/slipstream-menubar-item/releases/latest), get
+Paste into Terminal to download, verify, install and start the latest release:
+
+```sh
+curl -fsSL https://github.com/mzinner/slipstream-menubar-item/raw/main/install.sh | sh
+```
+
+It installs into /Applications (~/Applications if that is not writable) and clears the
+quarantine mark, so macOS opens the app without asking. `SLIPSTREAM_MENUBAR_TAG=v26.10.4` picks a
+release; `sh install.sh --help` lists the options. On its first start the app sets up Slipstream
+and a model.
+
+Or, from the [latest release](https://github.com/mzinner/slipstream-menubar-item/releases/latest), get
 either `Slipstream-Menubar.app.<version>.dmg` (open it and drag the app onto *Applications*) or
 `Slipstream-Menubar.app.<version>.zip` (unzip it and move *Slipstream Menubar.app* to
 /Applications). The app is signed ad hoc, not notarized, so allow it once in *System Settings →

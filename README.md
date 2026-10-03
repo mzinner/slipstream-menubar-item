@@ -192,6 +192,7 @@ Tests/SlipstreamMenubarCoreTests/
 scripts/build-app.sh             assembles and signs the .app bundle
 scripts/fake-server.py           stand-in Slipstream server for testing (outages, busy, served requests)
 scripts/make-icon.swift          draws Resources/AppIcon.icns from the bolt
+scripts/stage-hub-package.py     stages a prepared model as a package for a Hugging Face upload
 ```
 
 ## Releases

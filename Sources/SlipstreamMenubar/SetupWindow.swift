@@ -297,7 +297,7 @@ private struct SlipstreamStep: View {
             if case .failed(let message) = setup.engine {
                 InlineError(message: "The installation failed: \(message)").padding(.top, 10)
             }
-            if case .installing = setup.engine {} else {
+            if showsUseExisting {
                 Button("Already installed? Use existing installation…") { setup.chooseExisting() }
                     .buttonStyle(.link)
                     .padding(.top, 14)
@@ -306,6 +306,12 @@ private struct SlipstreamStep: View {
                 InlineError(message: error).padding(.top, 6)
             }
         }
+    }
+
+    /// Not once Install was clicked, unless it failed.
+    private var showsUseExisting: Bool {
+        if case .failed = setup.engine { return true }
+        return !setup.installStarted
     }
 
     private var status: String {

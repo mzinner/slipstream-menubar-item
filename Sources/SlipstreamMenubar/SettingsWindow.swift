@@ -219,10 +219,7 @@ private struct SettingsView: View {
     }
 
     /// What the GPU limit step does on this Mac.
-    private let ggufNote = "Preparing a GGUF model on its first start converts its downloaded files into "
-        + "Slipstream's format. Off, the files are used up as they are converted, so preparing needs little more "
-        + "disk space than the model. On, they are kept next to the prepared model, which needs the model's "
-        + "size again on disk."
+    private let ggufNote = "Off: a GGUF model's files are removed as it is prepared, saving disk space."
 
     private var gpuNote: String {
         let current = GPUMemoryLimit.currentMB().map { $0 == 0 ? "the macOS default" : "\($0) MB" } ?? "unknown"

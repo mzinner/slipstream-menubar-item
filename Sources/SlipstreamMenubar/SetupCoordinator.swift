@@ -54,21 +54,18 @@ final class SetupCoordinator: ObservableObject {
     /// Starts the server; returns why it could not, or nil.
     private let startServer: () -> String?
     private let openSettings: () -> Void
-    /// Shows the startup window: (open the web UI once running, simulated for the preview).
-    private let showStartup: (Bool, Bool) -> Void
+    private var webUIWatch: Task<Void, Never>?
     /// Closes the window.
     var close: () -> Void = {}
     private var observers: Set<AnyCancellable> = []
 
     init(server: ServerController, preview: Bool = false, saveConfig: @escaping (ServerConfig) -> Void,
-         startServer: @escaping () -> String?, openSettings: @escaping () -> Void,
-         showStartup: @escaping (Bool, Bool) -> Void) {
+         startServer: @escaping () -> String?, openSettings: @escaping () -> Void) {
         self.server = server
         self.preview = preview
         self.saveConfig = saveConfig
         self.startServer = startServer
         self.openSettings = openSettings
-        self.showStartup = showStartup
         selection = .entry(ModelManifest.bundled.defaultEntry?.id ?? "")
         forward(server)
     }
@@ -406,23 +403,42 @@ final class SetupCoordinator: ObservableObject {
     /// The server serves its chat page unless Settings turned it off (`--no-webui`).
     var webUIAvailable: Bool { !config.noWebUI }
 
-    /// Starts the server and hands over to the startup window, which follows it until it
-    /// runs (or fails, or is cancelled). A server that cannot even be launched keeps setup open.
+    /// Starts the server and closes setup; the Stats panel shows the first start's
+    /// preparation. A server that cannot even be launched keeps setup open with the reason.
     func start() {
         startError = nil
-        let openWebUI = openWebUIAfterStart && webUIAvailable
-        if preview {
-            close()
-            showStartup(openWebUI, true)
-            return
-        }
+        if preview { return close() }
         if let reason = startServer() {
             startError = reason
             return
         }
         markComplete()
+        if openWebUIAfterStart, webUIAvailable { openWebUIWhenRunning() }
         close()
-        showStartup(openWebUI, false)
+    }
+
+    /// Opens the chat page once the server is ready, which on a first start of a GGUF model
+    /// is after its preparation; gives up if the server stops or fails first.
+    private func openWebUIWhenRunning() {
+        webUIWatch?.cancel()
+        webUIWatch = Task { [weak self] in
+            var seenActive = false
+            while let self, !Task.isCancelled {
+                let status = self.server.status
+                if status.isActive { seenActive = true }
+                switch status {
+                case .running:
+                    if let url = URL(string: "http://127.0.0.1:\(self.server.port)/") { NSWorkspace.shared.open(url) }
+                    return
+                case .failed, .stopping:
+                    return
+                case .stopped where seenActive:
+                    return
+                default:
+                    try? await Task.sleep(for: .seconds(1))
+                }
+            }
+        }
     }
 
     func openSettingsInstead() {

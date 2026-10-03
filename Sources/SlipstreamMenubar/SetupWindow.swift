@@ -167,23 +167,39 @@ private struct SetupFooter: View {
 // MARK: - Shared pieces
 
 private struct Hero: View {
-    let symbol: String
+    var symbol: String?
+    var image: NSImage?
     let title: String
     let subtitle: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Image(systemName: symbol)
-                .font(.system(size: 28))
-                .foregroundStyle(.tint)
-                .padding(.bottom, 8)
-                .accessibilityHidden(true)
+            Group {
+                if let image {
+                    // The icon's own margin (the macOS icon grid) stays, so it sits at the text's edge.
+                    Image(nsImage: image).resizable().frame(width: 64, height: 64).padding(.leading, -6)
+                } else if let symbol {
+                    Image(systemName: symbol).font(.system(size: 28)).foregroundStyle(.tint)
+                }
+            }
+            .padding(.bottom, image == nil ? 8 : 2)
+            .accessibilityHidden(true)
             Text(title).font(.system(size: 20, weight: .semibold))
-            Text(subtitle).foregroundStyle(.secondary)
+            Text(subtitle).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         .padding(.bottom, 18)
     }
 }
+
+/// The app's icon: from the bundle, or from the source tree when run unbundled (`swift run`).
+@MainActor private let appIcon: NSImage = {
+    if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"), let image = NSImage(contentsOf: url) {
+        return image
+    }
+    let source = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        .deletingLastPathComponent().appendingPathComponent("Resources/AppIcon.icns")
+    return NSImage(contentsOf: source) ?? NSApp.applicationIconImage
+}()
 
 private struct InfoBox: View {
     let rows: [(label: String, value: String)]
@@ -229,9 +245,12 @@ private struct InlineError: View {
 private struct WelcomeStep: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Hero(symbol: "server.rack", title: "Welcome to your LLM server",
-                 subtitle: "Run models locally on your Mac. Setup takes a few minutes.")
-            VStack(alignment: .leading, spacing: 16) {
+            Hero(image: appIcon, title: "Welcome to Slipstream",
+                 subtitle: "Slipstream is a lean, high-performance C++ and Metal inference engine built "
+                    + "specifically for Apple Silicon. It combines SSD expert streaming with predictive "
+                    + "read-ahead and Prompt Lookup + MTP speculative drafting to serve frontier-scale models "
+                    + "that exceed your Mac's physical RAM.")
+            VStack(alignment: .leading, spacing: 12) {
                 FeatureRow(symbol: "cpu", title: "Runs on Apple silicon",
                            detail: "Fast local inference with Slipstream.")
                 FeatureRow(symbol: "lock", title: "Private by default",
@@ -272,8 +291,9 @@ private struct SlipstreamStep: View {
             Hero(symbol: "shippingbox", title: "Install Slipstream",
                  subtitle: "Slipstream is the inference engine that powers the server.")
             InfoBox(rows: [("Version", setup.engineVersion), ("Location", setup.engineLocation), ("Status", status)])
-            progress
-                .padding(.top, 12)
+            if setup.installStarted {
+                progress.padding(.top, 12)
+            }
             if case .failed(let message) = setup.engine {
                 InlineError(message: "The installation failed: \(message)").padding(.top, 10)
             }
@@ -303,8 +323,8 @@ private struct SlipstreamStep: View {
             if let fraction { ProgressView(value: fraction) } else { ProgressView().progressViewStyle(.linear) }
         case .installed:
             ProgressView(value: 1)
-        default:
-            ProgressView(value: 0)
+        case .notInstalled, .failed:
+            EmptyView()
         }
     }
 }

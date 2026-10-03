@@ -122,6 +122,9 @@ final class SetupCoordinator: ObservableObject {
         return .notInstalled
     }
 
+    /// Install was clicked in this setup (the progress bar shows from then on).
+    var installStarted: Bool { installer != nil }
+
     var engineVersion: String {
         if let installation = server.installation { return installation.version ?? "checkout" }
         return installer?.releaseName.map { $0.hasPrefix("v") ? String($0.dropFirst()) : $0 }

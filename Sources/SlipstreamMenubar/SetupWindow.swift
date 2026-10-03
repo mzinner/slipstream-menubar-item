@@ -22,7 +22,8 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         if window == nil {
             let window = SetupPanelWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 450),
                                           styleMask: [.titled, .closable], backing: .buffered, defer: false)
-            window.title = coordinator.preview ? "Setup (Preview: nothing is installed or downloaded)" : "Setup"
+            window.title = coordinator.preview
+                ? "Setup Slipstream (Preview: nothing is installed or downloaded)" : "Setup Slipstream"
             window.isReleasedWhenClosed = false
             window.delegate = self
             window.contentView = NSHostingView(rootView: SetupView(setup: coordinator))
@@ -460,25 +461,21 @@ private struct ServerStep: View {
         VStack(alignment: .leading, spacing: 0) {
             Hero(symbol: "play.circle", title: "Ready to start",
                  subtitle: "Your server will be available at the endpoint below.")
-            InfoBox(rows: [("Endpoint", setup.endpoint), ("Model", setup.modelName), ("Engine", engine)])
-            if let phase = setup.downloadPhase {
-                DownloadStatus(phase: phase, title: setup.downloadTitle, retry: setup.retryDownload)
-                    .padding(.top, 12)
-            }
+            InfoBox(rows: [("Endpoint", setup.endpoint), ("Model", setup.modelName), ("Engine", setup.engineName)])
             Text("You can change these any time in Settings.")
                 .font(.callout)
                 .foregroundStyle(.tertiary)
                 .padding(.top, 10)
+            if let phase = setup.downloadPhase {
+                DownloadStatus(phase: phase, title: setup.downloadTitle, retry: setup.retryDownload)
+                    .padding(.top, 12)
+            }
             if let error = setup.startError {
                 InlineError(message: "The server could not be started: \(error)").padding(.top, 8)
             }
         }
     }
 
-    private var engine: String {
-        guard let installation = setup.server.installation else { return "Slipstream (not installed)" }
-        return installation.version.map { "Slipstream \($0)" } ?? installation.displayName
-    }
 }
 
 private struct DownloadStatus: View {

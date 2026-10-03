@@ -163,6 +163,12 @@ final class SetupCoordinator: ObservableObject {
             ?? latestVersion ?? "—"
     }
 
+    /// "Slipstream 26.10.4", for the server step.
+    var engineName: String {
+        guard let installation else { return "Slipstream (not installed)" }
+        return installation.version.map { "Slipstream \($0)" } ?? installation.displayName
+    }
+
     var engineLocation: String {
         let url = installation?.root ?? ReleaseInstaller.prefix
         return (url.path as NSString).abbreviatingWithTildeInPath

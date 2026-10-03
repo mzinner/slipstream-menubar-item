@@ -54,18 +54,22 @@ final class SetupCoordinator: ObservableObject {
     /// Starts the server; returns why it could not, or nil.
     private let startServer: () -> String?
     private let openSettings: () -> Void
+    /// Opens the Stats panel, which follows the server from its start on.
+    private let showStats: () -> Void
     private var webUIWatch: Task<Void, Never>?
     /// Closes the window.
     var close: () -> Void = {}
     private var observers: Set<AnyCancellable> = []
 
     init(server: ServerController, preview: Bool = false, saveConfig: @escaping (ServerConfig) -> Void,
-         startServer: @escaping () -> String?, openSettings: @escaping () -> Void) {
+         startServer: @escaping () -> String?, openSettings: @escaping () -> Void,
+         showStats: @escaping () -> Void) {
         self.server = server
         self.preview = preview
         self.saveConfig = saveConfig
         self.startServer = startServer
         self.openSettings = openSettings
+        self.showStats = showStats
         selection = .entry(ModelManifest.bundled.defaultEntry?.id ?? "")
         forward(server)
     }
@@ -403,8 +407,9 @@ final class SetupCoordinator: ObservableObject {
     /// The server serves its chat page unless Settings turned it off (`--no-webui`).
     var webUIAvailable: Bool { !config.noWebUI }
 
-    /// Starts the server and closes setup; the Stats panel shows the first start's
-    /// preparation. A server that cannot even be launched keeps setup open with the reason.
+    /// Starts the server, closes setup and opens the Stats panel, which shows the first
+    /// start's preparation and loading. A server that cannot even be launched keeps setup
+    /// open with the reason.
     func start() {
         startError = nil
         if preview { return close() }
@@ -415,6 +420,7 @@ final class SetupCoordinator: ObservableObject {
         markComplete()
         if openWebUIAfterStart, webUIAvailable { openWebUIWhenRunning() }
         close()
+        showStats()
     }
 
     /// Opens the chat page once the server is ready, which on a first start of a GGUF model

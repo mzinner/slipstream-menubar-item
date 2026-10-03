@@ -47,7 +47,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             preview: setupPreview,
             saveConfig: { [weak self] config in self?.saveConfig(config) },
             startServer: { [weak self] in self?.startServer() },
-            openSettings: { [weak self] in self?.settings.show() }))
+            openSettings: { [weak self] in self?.settings.show() },
+            showStats: { [weak self] in
+                guard let self, !self.panel.isVisible else { return }
+                self.panel.show()
+                self.menu.update()
+            }))
         settings = SettingsWindowController(
             server: server,
             save: { [weak self] config, key, restart in self?.apply(config, apiKey: key, restart: restart) },

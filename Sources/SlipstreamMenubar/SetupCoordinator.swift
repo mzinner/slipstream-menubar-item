@@ -34,6 +34,10 @@ final class SetupCoordinator: ObservableObject {
                                                        searchPath: { [weak self] in self?.server.searchPath ?? [] })
     @Published var startError: String?
     @Published private(set) var starting = false
+    /// "Open Web UI after server startup": once the server runs, which on a first start of a
+    /// GGUF model is minutes after setup closed.
+    @Published var openWebUIAfterStart = true
+    private var webUIWatch: Task<Void, Never>?
 
     let manifest = ModelManifest.bundled
     let server: ServerController
@@ -398,6 +402,9 @@ final class SetupCoordinator: ObservableObject {
 
     var endpoint: String { "http://localhost:\(config.port)" }
 
+    /// The server serves its chat page unless Settings turned it off (`--no-webui`).
+    var webUIAvailable: Bool { !config.noWebUI }
+
     /// Starts the server; setup is complete once it is preparing, loading or running.
     /// A failure keeps the window open with the reason.
     func start() {
@@ -415,6 +422,7 @@ final class SetupCoordinator: ObservableObject {
                 case .preparing, .loading, .running:
                     self.starting = false
                     self.markComplete()
+                    if self.openWebUIAfterStart, self.webUIAvailable { self.openWebUIWhenRunning() }
                     self.close()
                     return
                 case .failed(let reason):
@@ -423,6 +431,24 @@ final class SetupCoordinator: ObservableObject {
                     return
                 default:
                     try? await Task.sleep(for: .milliseconds(500))
+                }
+            }
+        }
+    }
+
+    /// Opens the chat page once the server is ready; gives up if it stops or fails first.
+    private func openWebUIWhenRunning() {
+        webUIWatch?.cancel()
+        webUIWatch = Task { [weak self] in
+            while let self, !Task.isCancelled {
+                switch self.server.status {
+                case .running:
+                    if let url = URL(string: "http://127.0.0.1:\(self.server.port)/") { NSWorkspace.shared.open(url) }
+                    return
+                case .stopped, .stopping, .failed:
+                    return
+                default:
+                    try? await Task.sleep(for: .seconds(1))
                 }
             }
         }

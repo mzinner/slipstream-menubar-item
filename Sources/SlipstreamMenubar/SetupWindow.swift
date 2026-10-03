@@ -466,6 +466,12 @@ private struct ServerStep: View {
                 .font(.callout)
                 .foregroundStyle(.tertiary)
                 .padding(.top, 10)
+            if setup.webUIAvailable {
+                Toggle("Open Web UI after server startup", isOn: $setup.openWebUIAfterStart)
+                    .toggleStyle(.checkbox)
+                    .disabled(setup.starting)
+                    .padding(.top, 12)
+            }
             if let phase = setup.downloadPhase {
                 DownloadStatus(phase: phase, title: setup.downloadTitle, retry: setup.retryDownload)
                     .padding(.top, 12)

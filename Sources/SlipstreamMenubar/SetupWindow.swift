@@ -22,7 +22,7 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         if window == nil {
             let window = SetupPanelWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 450),
                                           styleMask: [.titled, .closable], backing: .buffered, defer: false)
-            window.title = "Setup"
+            window.title = coordinator.preview ? "Setup (Preview: nothing is installed or downloaded)" : "Setup"
             window.isReleasedWhenClosed = false
             window.delegate = self
             window.contentView = NSHostingView(rootView: SetupView(setup: coordinator))
@@ -431,8 +431,8 @@ private struct ServerStep: View {
             Hero(symbol: "play.circle", title: "Ready to start",
                  subtitle: "Your server will be available at the endpoint below.")
             InfoBox(rows: [("Endpoint", setup.endpoint), ("Model", setup.modelName), ("Engine", engine)])
-            if let downloader = setup.downloader {
-                DownloadStatus(downloader: downloader, retry: setup.retryDownload)
+            if let phase = setup.downloadPhase {
+                DownloadStatus(phase: phase, title: setup.downloadTitle, retry: setup.retryDownload)
                     .padding(.top, 12)
             }
             Text("You can change these any time in Settings.")
@@ -452,11 +452,12 @@ private struct ServerStep: View {
 }
 
 private struct DownloadStatus: View {
-    @ObservedObject var downloader: ModelDownloader
+    let phase: ModelDownloader.Phase
+    let title: String
     let retry: () -> Void
 
     var body: some View {
-        switch downloader.phase {
+        switch phase {
         case .preparing:
             VStack(alignment: .leading, spacing: 4) {
                 ProgressView().progressViewStyle(.linear)
@@ -465,7 +466,7 @@ private struct DownloadStatus: View {
         case .downloading(let received, let total, _, let secondsLeft):
             VStack(alignment: .leading, spacing: 4) {
                 ProgressView(value: total > 0 ? Double(received) / Double(total) : 0)
-                Text(verbatim: "Downloading \(downloader.model.title): \(bytes(received)) of \(bytes(total))"
+                Text(verbatim: "Downloading \(title): \(bytes(received)) of \(bytes(total))"
                      + (secondsLeft.map { " · \(TransferEstimator.describe($0)) left" } ?? ""))
                     .font(.callout).foregroundStyle(.secondary).monospacedDigit()
             }

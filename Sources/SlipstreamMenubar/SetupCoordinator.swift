@@ -37,6 +37,16 @@ final class SetupCoordinator: ObservableObject {
 
     let manifest = ModelManifest.bundled
     let server: ServerController
+    /// `--setup-preview`: every step can be clicked through, but nothing is installed,
+    /// downloaded, started or saved; install, download and start are simulated.
+    let preview: Bool
+    @Published private var previewConfig = ServerConfig()
+    @Published private var previewInstallation: SlipstreamInstallation?
+    @Published private var previewEngine: Engine?
+    @Published private var previewInstallStarted = false
+    @Published private var previewDownload: ModelDownloader.Phase?
+    @Published private var previewModelReady = false
+    private var previewTask: Task<Void, Never>?
     private var installer: ReleaseInstaller?
     private let saveConfig: (ServerConfig) -> Void
     /// Starts the server; returns why it could not, or nil.
@@ -47,9 +57,10 @@ final class SetupCoordinator: ObservableObject {
     private var observers: Set<AnyCancellable> = []
     private var startWatch: Task<Void, Never>?
 
-    init(server: ServerController, saveConfig: @escaping (ServerConfig) -> Void,
+    init(server: ServerController, preview: Bool = false, saveConfig: @escaping (ServerConfig) -> Void,
          startServer: @escaping () -> String?, openSettings: @escaping () -> Void) {
         self.server = server
+        self.preview = preview
         self.saveConfig = saveConfig
         self.startServer = startServer
         self.openSettings = openSettings
@@ -64,50 +75,63 @@ final class SetupCoordinator: ObservableObject {
             .store(in: &observers)
     }
 
+    /// The settings setup reads and writes: in a preview, a fresh copy in memory.
+    private var config: ServerConfig { preview ? previewConfig : server.config }
+
+    private var installation: SlipstreamInstallation? { preview ? previewInstallation : server.installation }
+
+    private func save(_ config: ServerConfig) {
+        if preview { previewConfig = config } else { saveConfig(config) }
+    }
+
     // MARK: Opening
 
-    var modelPresent: Bool { ModelPresence.isAvailable(server.config.model) }
+    var modelPresent: Bool { preview ? previewModelReady : ModelPresence.isAvailable(config.model) }
 
     var isNeeded: Bool {
-        SetupProgress.isNeeded(config: server.config, hasInstallation: server.installation != nil,
+        SetupProgress.isNeeded(config: config, hasInstallation: installation != nil,
                                modelPresent: modelPresent)
     }
 
     /// Picks up at the first incomplete step, with the configured model selected.
     func prepareToShow() {
         if downloader?.phase.isRunning != true {
-            step = SetupProgress.firstIncompleteStep(hasInstallation: server.installation != nil,
+            step = SetupProgress.firstIncompleteStep(hasInstallation: installation != nil,
                                                      modelPresent: modelPresent)
         }
-        let model = server.config.model.trimmingCharacters(in: .whitespaces)
+        let model = config.model.trimmingCharacters(in: .whitespaces)
         if let entry = manifest.models.first(where: { $0.repository == model && $0.isAvailable }) {
             selection = .entry(entry.id)
-        } else if let custom = server.config.customModels.first(where: { $0.repository == model }) {
+        } else if let custom = config.customModels.first(where: { $0.repository == model }) {
             selection = .hub(custom)
         } else if model.hasPrefix("/") || model.hasPrefix("~") {
             selection = .folder(URL(fileURLWithPath: (model as NSString).expandingTildeInPath))
         }
         startError = nil
-        if latestVersion == nil, server.installation == nil {
-            Task { latestVersion = await ReleaseInstaller(repository: server.config.releaseRepository).latestVersion() }
+        if latestVersion == nil, installation == nil {
+            Task { latestVersion = await ReleaseInstaller(repository: config.releaseRepository).latestVersion() }
         }
     }
 
     /// Nothing is missing: setup is done without being shown.
     func completeSilently() {
-        guard !server.config.setupCompleted else { return }
+        guard !config.setupCompleted else { return }
         markComplete()
     }
 
     private func markComplete() {
-        var config = server.config
+        var config = self.config
         config.setupCompleted = true
-        saveConfig(config)
+        save(config)
     }
 
     // MARK: Slipstream
 
     var engine: Engine {
+        if preview {
+            if let previewEngine { return previewEngine }
+            return previewInstallation.map(Engine.installed) ?? .notInstalled
+        }
         if let installer {
             switch installer.phase {
             case .resolving:
@@ -126,34 +150,35 @@ final class SetupCoordinator: ObservableObject {
                 break
             }
         }
-        if let installation = server.installation { return .installed(installation) }
+        if let installation = installation { return .installed(installation) }
         return .notInstalled
     }
 
     /// Install was clicked in this setup (the progress bar shows from then on).
-    var installStarted: Bool { installer != nil }
+    var installStarted: Bool { installer != nil || previewInstallStarted }
 
     var engineVersion: String {
-        if let installation = server.installation { return installation.version ?? "checkout" }
+        if let installation = installation { return installation.version ?? "checkout" }
         return installer?.releaseName.map { $0.hasPrefix("v") ? String($0.dropFirst()) : $0 }
             ?? latestVersion ?? "—"
     }
 
     var engineLocation: String {
-        let url = server.installation?.root ?? ReleaseInstaller.prefix
+        let url = installation?.root ?? ReleaseInstaller.prefix
         return (url.path as NSString).abbreviatingWithTildeInPath
     }
 
     func install() {
         pickError = nil
+        if preview { return simulateInstall() }
         // The release goes to ~/.local, where the app looks first once no other choice is set.
-        var config = server.config
+        var config = self.config
         if config.useCheckout || !config.slipstreamPath.isEmpty {
             config.useCheckout = false
             config.slipstreamPath = ""
-            saveConfig(config)
+            save(config)
         }
-        let installer = ReleaseInstaller(repository: server.config.releaseRepository)
+        let installer = ReleaseInstaller(repository: config.releaseRepository)
         self.installer = installer
         forward(installer)
         installer.start { [weak self] _ in self?.server.locate() }
@@ -174,8 +199,12 @@ final class SetupCoordinator: ObservableObject {
         case .success(let installation):
             pickError = nil
             installer = nil
-            saveConfig(installation.applied(to: server.config))
-            server.locate()
+            if preview {
+                previewInstallation = installation
+            } else {
+                save(installation.applied(to: config))
+                server.locate()
+            }
         case .failure(let error):
             pickError = error.localizedDescription
         }
@@ -249,7 +278,7 @@ final class SetupCoordinator: ObservableObject {
         hubCheckNumber += 1
         let number = hubCheckNumber
         Task {
-            let result = await ModelPicker.check(repository, installation: server.installation,
+            let result = await ModelPicker.check(repository, installation: installation,
                                                  searchPath: server.searchPath)
             // A newer check, or an edit since, wins.
             if number == hubCheckNumber { hubCheck = result }
@@ -277,6 +306,8 @@ final class SetupCoordinator: ObservableObject {
 
     /// Already on disk: "Continue" rather than "Download and continue".
     var selectionIsOnDisk: Bool {
+        if preview, case .folder = selection { return true }
+        if preview { return false }
         switch selection {
         case .folder: return true
         case .hub(let spec): return ModelStore.isDownloaded(spec.repository)
@@ -294,6 +325,7 @@ final class SetupCoordinator: ObservableObject {
         switch selection {
         case .folder(let url):
             use(model: url.path)
+            if preview { previewModelReady = true }
             step = .server
         case .entry, .hub:
             let spec: ModelSpec
@@ -308,11 +340,16 @@ final class SetupCoordinator: ObservableObject {
                 return
             }
             use(model: spec.repository)
+            if preview {
+                simulateDownload(of: spec)
+                step = .server
+                return
+            }
             if ModelStore.isDownloaded(spec.repository) || downloader?.model == spec && downloader?.phase.isRunning == true {
                 step = .server
                 return
             }
-            guard let installation = server.installation else {
+            guard let installation = self.installation else {
                 modelError = "Slipstream is not installed: go back and install it first."
                 return
             }
@@ -322,17 +359,17 @@ final class SetupCoordinator: ObservableObject {
 
     /// Settings lists it, as it does New Model…'s.
     private func addCustomModel(_ spec: ModelSpec) {
-        guard !server.config.availableModels.contains(where: { $0.repository == spec.repository }) else { return }
-        var config = server.config
+        guard !config.availableModels.contains(where: { $0.repository == spec.repository }) else { return }
+        var config = self.config
         config.customModels.append(spec)
-        saveConfig(config)
+        save(config)
     }
 
     private func use(model: String) {
-        guard server.config.model != model else { return }
-        var config = server.config
+        guard config.model != model else { return }
+        var config = self.config
         config.model = model
-        saveConfig(config)
+        save(config)
     }
 
     private func checkDiskAndDownload(_ spec: ModelSpec, installation: SlipstreamInstallation) async {
@@ -345,7 +382,7 @@ final class SetupCoordinator: ObservableObject {
         }
         let free = MachineCheck.freeDiskBytes(at: spec.folderURL) ?? 0
         let preparation: DiskCheck.Preparation = spec.kind != .gguf ? .none
-            : installation.supportsKeepGGUF && !server.config.keepGGUFFiles ? .inPlace : .alongside
+            : installation.supportsKeepGGUF && !config.keepGGUFFiles ? .inPlace : .alongside
         if case .insufficient(let shortBy) = DiskCheck.evaluate(total: total, downloaded: downloader.downloadedBytes,
                                                                 free: free, preparation: preparation) {
             modelError = "\(spec.title) needs \(bytes(total)), and \(bytes(DiskCheck.reserveBytes)) must stay free. "
@@ -360,11 +397,17 @@ final class SetupCoordinator: ObservableObject {
     }
 
     func retryDownload() {
+        if preview { return }
         guard let downloader, !downloader.phase.isRunning else { return }
         downloader.run { _ in }
     }
 
-    var isDownloading: Bool { downloader?.phase.isRunning == true }
+    /// The model download's state, for the server step.
+    var downloadPhase: ModelDownloader.Phase? { preview ? previewDownload : downloader?.phase }
+
+    var downloadTitle: String { downloader?.model.title ?? modelName }
+
+    var isDownloading: Bool { downloadPhase?.isRunning == true }
 
     /// Quitting stops a running download; its partial files stay for the next one.
     func confirmQuit() -> Bool {
@@ -384,12 +427,13 @@ final class SetupCoordinator: ObservableObject {
 
     // MARK: Server
 
-    var endpoint: String { "http://localhost:\(server.config.port)" }
+    var endpoint: String { "http://localhost:\(config.port)" }
 
     /// Starts the server; setup is complete once it is preparing, loading or running.
     /// A failure keeps the window open with the reason.
     func start() {
         startError = nil
+        if preview { return simulateStart() }
         if let reason = startServer() {
             startError = reason
             return
@@ -424,6 +468,63 @@ final class SetupCoordinator: ObservableObject {
     func stopWatchingStart() {
         startWatch?.cancel()
         starting = false
+    }
+
+    // MARK: Preview
+
+    private func simulateInstall() {
+        previewInstallStarted = true
+        previewTask?.cancel()
+        previewTask = Task { [weak self] in
+            guard let self else { return }
+            previewEngine = .installing(fraction: nil, status: "Starting download…")
+            try? await Task.sleep(for: .seconds(1))
+            for percent in stride(from: 0, through: 100, by: 4) {
+                previewEngine = .installing(fraction: Double(percent) / 100, status: "Downloading \(percent) %")
+                try? await Task.sleep(for: .milliseconds(120))
+            }
+            previewEngine = .installing(fraction: 1, status: "Verifying…")
+            try? await Task.sleep(for: .milliseconds(800))
+            previewEngine = .installing(fraction: 1, status: "Installing…")
+            try? await Task.sleep(for: .milliseconds(800))
+            let version = latestVersion ?? "26.10.3"
+            let root = ReleaseInstaller.prefix.appendingPathComponent(version)
+            previewInstallation = SlipstreamInstallation(kind: .release, launcher: root.appendingPathComponent("bin/slipstream"),
+                                                         root: root, version: version)
+            previewEngine = nil
+        }
+    }
+
+    /// About 15 seconds for the whole download.
+    private func simulateDownload(of spec: ModelSpec) {
+        let total = manifest.models.first { $0.repository == spec.repository }?.sizeBytes ?? 104_000_000_000
+        previewModelReady = false
+        previewTask?.cancel()
+        previewTask = Task { [weak self] in
+            guard let self else { return }
+            previewDownload = .preparing
+            try? await Task.sleep(for: .seconds(1))
+            let steps = 50
+            for index in 0...steps {
+                let received = total / Int64(steps) * Int64(index)
+                previewDownload = .downloading(received: received, total: total, bytesPerSecond: Double(total) / 14,
+                                               secondsLeft: Double(steps - index) * 0.28)
+                try? await Task.sleep(for: .milliseconds(280))
+            }
+            previewDownload = .done
+            previewModelReady = true
+        }
+    }
+
+    private func simulateStart() {
+        starting = true
+        startWatch?.cancel()
+        startWatch = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard let self, !Task.isCancelled else { return }
+            starting = false
+            close()
+        }
     }
 }
 

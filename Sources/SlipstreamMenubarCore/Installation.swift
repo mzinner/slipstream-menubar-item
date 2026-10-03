@@ -19,6 +19,13 @@ public struct SlipstreamInstallation: Equatable, Sendable {
     /// From the package's `release.json`; nil for a checkout.
     public var version: String?
 
+    public init(kind: Kind, launcher: URL, root: URL, version: String?) {
+        self.kind = kind
+        self.launcher = launcher
+        self.root = root
+        self.version = version
+    }
+
     /// Where this installation's launcher records a running server.
     public var serveLockURL: URL {
         switch kind {

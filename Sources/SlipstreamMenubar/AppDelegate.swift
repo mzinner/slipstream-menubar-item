@@ -39,8 +39,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onDownloaded: { [weak self] model in self?.useDownloadedModel(model) },
             startServer: { [weak self] in self?.start() },
             openSettings: { [weak self] in self?.settings.show() })
+        // `--setup-preview`: setup to click through, with nothing installed, downloaded,
+        // started or saved.
+        let setupPreview = CommandLine.arguments.contains("--setup-preview")
         setup = SetupWindowController(coordinator: SetupCoordinator(
             server: server,
+            preview: setupPreview,
             saveConfig: { [weak self] config in self?.saveConfig(config) },
             startServer: { [weak self] in self?.startServer() },
             openSettings: { [weak self] in self?.settings.show() }))
@@ -89,7 +93,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // A slipstream that only the login shell's PATH reaches, e.g. Homebrew's.
             await self.server.learnLoginShellPath()
             // First run: setup, while Slipstream or a model is missing.
-            if self.setup.coordinator.isNeeded || CommandLine.arguments.contains("--setup") {
+            if self.setup.coordinator.isNeeded || self.setup.coordinator.preview
+                || CommandLine.arguments.contains("--setup") {
                 self.setup.show()
                 // Development aid: open setup at a step (1–4), for screenshots.
                 if let index = CommandLine.arguments.firstIndex(of: "--setup-step"),

@@ -131,8 +131,7 @@ public struct ModelManifest: Codable, Equatable, Sendable {
               repository: "nitinpanj/Swift-Qwen3.8-Flash-Next-Q4_0-Q8out-v3-GGUF",
               extraFiles: [ModelSpec.mtpDraftHead], sizeBytes: 104_468_009_728),
         Entry(id: "qwen38-v3-converted", name: "Qwen3.8-Flash-Next V3", title: "Qwen3.8-Flash-Next V3",
-              repository: nil, kind: .package, sizeBytes: 107_723_711_614, availability: .comingSoon,
-              badge: "Soon"),
+              repository: "MikeZ75/Qwen3.8-Flash-Next-V3-Splash", kind: .package, sizeBytes: 107_723_711_614),
         Entry(id: "qwen38-v3", name: "Qwen3.8-Flash-Next V3", title: "Qwen3.8-Flash-Next V3",
               repository: "nitinpanj/qwen38-flash-next-v3", sizeBytes: 104_475_874_048),
     ])

@@ -36,12 +36,12 @@
       "id": "qwen38-v3-converted",
       "name": "Qwen3.8-Flash-Next V3",
       "title": "Qwen3.8-Flash-Next V3",
+      "repository": "MikeZ75/Qwen3.8-Flash-Next-V3-Splash",
       "kind": "package",
       "sizeBytes": 107723711614,
       "minimumMemoryGiB": 64,
       "recommendedMemoryGiB": 64,
-      "availability": "comingSoon",
-      "badge": "Soon"
+      "availability": "available"
     },
     {
       "id": "qwen38-v3",

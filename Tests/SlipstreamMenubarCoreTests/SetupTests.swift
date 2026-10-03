@@ -13,19 +13,16 @@ final class ModelManifestTests: XCTestCase {
         XCTAssertEqual(decoded, ModelManifest.builtIn)
     }
 
-    func testTheSwiftPackageIsTheDefaultAndTheBasePackageIsComingSoon() throws {
+    func testTheSwiftPackageIsTheDefault() throws {
         let manifest = ModelManifest.builtIn
         XCTAssertEqual(manifest.defaultEntry?.id, "swift-v3-converted")
         XCTAssertEqual(manifest.defaultEntry?.spec?.kind, .package, "ready to run: nothing to convert")
         XCTAssertEqual(manifest.setupEntries.map(\.id),
                        ["swift-v3-converted", "swift-v3", "qwen38-v3-converted", "qwen38-v3"])
-        let base = try XCTUnwrap(manifest.entry(id: "qwen38-v3-converted"))
-        XCTAssertFalse(base.isAvailable)
-        XCTAssertNil(base.spec)
-        XCTAssertEqual(base.detail(memoryGiB: 64), "Available soon")
         XCTAssertEqual(manifest.catalog.map(\.repository), [
             "MikeZ75/Swift-Qwen3.8-Flash-Next-V3-Splash",
             "nitinpanj/Swift-Qwen3.8-Flash-Next-Q4_0-Q8out-v3-GGUF",
+            "MikeZ75/Qwen3.8-Flash-Next-V3-Splash",
             "nitinpanj/qwen38-flash-next-v3",
         ], "Settings offers what is available, in the manifest's order")
         XCTAssertEqual(ModelSpec.swiftQwen38FlashNext.extraFiles, [ModelSpec.mtpDraftHead])
@@ -36,11 +33,7 @@ final class ModelManifestTests: XCTestCase {
         var models = try XCTUnwrap(object["models"] as? [[String: Any]])
         for index in models.indices {
             models[index]["isDefault"] = false
-            if models[index]["id"] as? String == "qwen38-v3-converted" {
-                models[index]["repository"] = "MikeZ75/Qwen3.8-Flash-Next-V3-Splash"
-                models[index]["availability"] = "available"
-                models[index]["isDefault"] = true
-            }
+            if models[index]["id"] as? String == "qwen38-v3-converted" { models[index]["isDefault"] = true }
         }
         object["models"] = models
         let manifest = try JSONDecoder().decode(ModelManifest.self,

@@ -590,8 +590,8 @@ final class RunningVersionTests: XCTestCase {
 final class ModelCatalogTests: XCTestCase {
     func testTheCatalog() {
         XCTAssertEqual(ModelSpec.catalog.map(\.repository), [
-            "MikeZ75/Swift-Qwen3.8-Flash-Next-V3-Splash",
-            "nitinpanj/Swift-Qwen3.8-Flash-Next-Q4_0-Q8out-v3-GGUF", "nitinpanj/qwen38-flash-next-v3",
+            "MikeZ75/Swift-Qwen3.8-Flash-Next-V3-Splash", "nitinpanj/Swift-Qwen3.8-Flash-Next-Q4_0-Q8out-v3-GGUF",
+            "MikeZ75/Qwen3.8-Flash-Next-V3-Splash", "nitinpanj/qwen38-flash-next-v3",
         ], "the engine loads only Qwen3.8-Flash-Next")
         XCTAssertEqual(ModelSpec.qwen38FlashNext.memoryNote, "64 GB Mac")
         XCTAssertEqual(ModelSpec(repository: "a/b", title: "b", minimumMemoryGiB: 36,

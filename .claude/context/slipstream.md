@@ -17,7 +17,18 @@ Part of the project context; see [the index](../PROJECT_CONTEXT.md).
   (`model`, pinned `revision`, `"downloaded": true` when complete), the shards, and
   `MTP/mtp-shared-Q4_K_M.gguf` (from `nitinpanj/qwen38-flash-next-v3@e2982050…` when the repository
   lacks it); `serve` then prepares `prepared/` there, and serves under the Hub id as model name. A
-  package stays a link into the Hub cache. `pull` `exec`s the download: SIGINT exits 130 after files
+  package stays a link into the Hub cache.
+- **In-place preparation (26.10.4+):** for a store install, `serve` runs the converter with
+  `--consume-source`: each GGUF tensor's bytes are freed (`F_PUNCHHOLE`) once its part is written,
+  then the shards and MTP head are deleted. Peak 102.6 GiB vs 197 before, output byte-identical.
+  `serve --keep-gguf` keeps them; a user's own folder is never used up; an already prepared store
+  model loses its leftover shards on the next serve (~191 GB on this Mac once 26.10.4 runs here).
+  Resumable (`prepared/.prepare-journal`, parts renamed from `.partial` when complete).
+- **`pull <repo> --check [--json]` (26.10.4+):** downloads nothing; `{"supported": true, "kind",
+  "bytes", "revision", "files", "mtp"}` or `{"supported": false, "reason"}`, exit 0/1. GGUF must be
+  one model (single file or one complete split set) of architecture `qwen4exp` (256 KiB ranged
+  header read); packages go through `validate_package_manifest`. Plain `pull` refuses the same
+  before writing anything. Uses the bundled `huggingface_hub` 1.28 and its token. `pull` `exec`s the download: SIGINT exits 130 after files
   in transfer finish (21 s once) and the next pull resumes. Done downloads skip the network.
 - **Signals:** SIGTERM/SIGINT → graceful shutdown, logs `Stopping · releasing engine resources`,
   ~2 s. A model load takes ~11–15 s for a prepared package. GGUF preparation took 214 s with 5 workers.
@@ -123,3 +134,22 @@ Part of the project context; see [the index](../PROJECT_CONTEXT.md).
     from the `fork` remote like #3–#5.
   - `make check-source` fails on `main` over whitespace in `.agents/*`, `docs/research/…` and two
     `dev/tools` scripts, all older than this work.
+- **Low-disk preparation and `pull --check` (2026-10-03, fork v26.10.4, `main` up to `9ada146`):**
+  - Upstream-ready branches, pushed to `mzinner`, no PR yet, stacked:
+    `feat/slipstream-pull` → `feat/gguf-low-disk-prepare` (2 commits) → `feat/pull-check` (1).
+    Cherry-picked onto `main` (the fork's `main` holds its own linear copy of the stack, so a merge
+    would duplicate commits). The check test avoids depending on the fork-only Splash 1.0 refusal.
+  - Python tests: 93 in the touched suites; the full suite has 43 failures that exist without
+    these changes too (engine-dependent).
+  - Release notes in the fork's workflow now describe in-place preparation and `--check`.
+  - Verified: the released 26.10.4 package has `--keep-gguf` and answers `--check`.
+- **Hugging Face (account MikeZ75, logged in with `hf`):** the two prepared packages are public:
+  `MikeZ75/Swift-Qwen3.8-Flash-Next-V3-Splash` and `MikeZ75/Qwen3.8-Flash-Next-V3-Splash`
+  (107,723,711,614 bytes each, 67 files; license `other` Qwen Community, as the sources; cards
+  credit UkisAI, nitinpanj, Qwen). Staged with `scripts/stage-hub-package.py` (hard links, adds
+  `target/draft-vocab.bin` from `nitinpanj/Swift-Qwen3.8-Flash-Next-Splash`, which the installer
+  requires and the converter doesn't write, the manifest's artifact list and `config.json`), then
+  `hf upload-large-folder`. The Swift one went in ~10 min (Xet already had ~76 GB of it from the
+  author's unfinished `nitinpanj/Swift-Qwen3.8-Flash-Next-Splash`), the base one ~30 min at
+  ~600 Mbit/s. The Swift one was pulled from the Hub, passed `verify --full`, and served
+  correctly (17 × 23 = 391, ~32 tok/s); the base one only passed `--check`.

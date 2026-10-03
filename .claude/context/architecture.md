@@ -51,19 +51,51 @@ Part of the project context; see [the index](../PROJECT_CONTEXT.md).
     is `build/runtime/serve.lock`.
   - Refresh reads **all** candidate locks, so a server from either kind is found.
   - With nothing installed, the menu shows **Install Slipstream…** instead of Start.
+- **Model manifest** (`Resources/models.json`, copied into the bundle by `build-app.sh`;
+  `ModelManifest.builtIn` is a compiled-in copy a test keeps equal): the list setup and Settings
+  offer, and `ModelSpec.catalog`. Entries: id, name, title, repository (none while coming soon),
+  kind (`gguf`/`package`), extraFiles, sizeBytes, minimum RAM, availability
+  (`available`/`comingSoon`), badge, isDefault, inSetup. Making a model available or the default is
+  a JSON edit. Current order: Swift Splash Q4 package `MikeZ75/Swift-Qwen3.8-Flash-Next-V3-Splash`
+  (default, Recommended), Swift GGUF, base Splash Q4 package `MikeZ75/Qwen3.8-Flash-Next-V3-Splash`,
+  base GGUF. Format tags: GGUF (converted on the first start), Splash Q4 (ready to run).
+- **First-run setup** (`SetupCoordinator`, `SetupWindow.swift`, `HubModelDialog.swift`; Core
+  `SetupProgress`): a fixed 640×450 "Setup Slipstream" window, step sidebar (Welcome, Slipstream,
+  Model, Server), one default button per step (`.id(title)` so the focus ring follows a relabel).
+  - **Opens** at launch (after `learnLoginShellPath`) while `!setupCompleted` and Slipstream or the
+    model is missing; otherwise `completeSilently()` marks it done. Reopens at the first incomplete
+    step; Settings has "Run setup again…". Esc doesn't close it (`cancelOperation` overridden).
+  - **Slipstream:** Install (`ReleaseInstaller`, progress bar only once clicked) or "Use existing
+    installation…" (`SlipstreamInstallation.chosen`: a release folder, its command, or a checkout;
+    too old = no `pull`). A release outside `~/.local` is stored as `slipstreamPath`, tried first by
+    `InstallationLocator`.
+  - **Model:** scrollable cards from the manifest, "Model from Hugging Face" (the shared
+    `HubModelDialog`: owner/name or the page URL via `HubModelID.parse`, checked before use) and
+    "Other model" (a folder, validated with `ModelPresence`). "Download and continue" saves the
+    choice, checks the disk, starts `ModelDownloader` in the background and moves on.
+  - **Server:** endpoint/model/engine box, the download's progress, "Open Web UI after server
+    startup" (default on: opens `http://127.0.0.1:<port>/` once the status is Running; gives up if it
+    stops). Start closes setup and opens the Stats panel; "Open settings…" finishes setup. A
+    "Starting Slipstream" wait window was built and removed again at the user's request (the panel
+    is enough).
+  - **Preview** (`--setup-preview`): installs, downloads and starts are simulated, settings stay in
+    memory; pickers and the Hub check are real (read-only).
 - **Model picker** (`ModelPicker.swift`; Settings → Model `ModelChoice`): the menu's "Download
-  Model…" opens it first, as the user asked.
+  Model…" opens it first, as the user asked. Settings' Model section lists catalog, custom models and
+  a chosen folder, with **Choose from disk…** and **Load from Hugging Face…** (the setup dialog).
   - **Catalog:** **only Qwen3.8-Flash-Next** (Swift + base). The engine loads only
     `splash-packed-q4-qwen4exp` (`runtime/model/ModelDescriptor.mm:324`). The
     `incoai/Qwen3.8-27B-Splash` / `Qwen3.6-35B-A3B-Splash` packages in the launcher's
     `official-models.txt` and `PACKAGE_FORMATS` (from Splash 1.0) downloaded fine (17.4 / 20.9
     GB, ~3 min each) but fail with `unsupported weight format: splash-packed-q4[-moe]`. Tested;
     don't re-add them.
-  - **New Model…** (`ModelCheck`): Hub tree → package (manifest format/schema must be
-    qwen4exp/5) or GGUF (first shard header via a 256 KB `Range` request → `GGUFHeader`
-    `general.architecture` must be `qwen4exp`; adds the shared MTP head if the repo lacks one).
-    Saved to `config.customModels`. Verified against real repos: qwen2 GGUF and safetensors-only
-    are rejected; a missing repo returns 401.
+  - **Checking a Hub model** (`ModelPicker.check`): with a Slipstream that has `pull --check`
+    (`supportsPullCheck`), its JSON verdict (`PullCheck`); otherwise the app's own `ModelCheck`: Hub
+    tree → package (manifest format/schema must be qwen4exp/5) or GGUF (one model: a single file or
+    one complete `-0000N-of-0000M` set at the top level; first shard header via a 256 KB `Range`
+    request → `general.architecture` must be `qwen4exp`; adds the shared MTP head if the repo lacks
+    one). **No size limit** (the old 150 GB cap stood in for "several variants"; the user rejected
+    it). Saved to `config.customModels`.
   - `--download <repo>` dev aid starts a catalog model's download.
 - **Open Web UI** (menu, ⌘O): opens `http://127.0.0.1:<port>/` in the default browser while the
   server is serving and the web UI is on (`noWebUI` off).
@@ -110,7 +142,7 @@ Part of the project context; see [the index](../PROJECT_CONTEXT.md).
   - Every real `qwen4exp` model is Flash-Next, and the engine's layout is fixed to its dimensions.
     Low-bit Flash-Next builds (unsloth/AtomicChat/ISTA, IQ quantisations, in sub-folders) are
     re-quantised to the same ~95 GB package, and the converter can't read IQ types.
-  - So New Model… rejects GGUF variants in sub-folders and anything over 150 GB.
+  - So the check rejects GGUF variants in sub-folders or side by side (not by size any more).
 - **Model download** (`ModelSetup.swift`, `ModelDownloader`, `ModelWindow`): "Download Model…"
   shows while `config.model` is missing (`ModelPresence`).
   - **Model:** `ModelSpec.swiftQwen38FlashNext`, the user's choice. The download is
@@ -129,8 +161,11 @@ Part of the project context; see [the index](../PROJECT_CONTEXT.md).
     `ModelPresence.isAvailable(<hub id>)` is that, so "Download Model…" shows until a pull finished.
   - **Order of checks:** RAM ≥ 64 GB (warn), a Slipstream with `pull`
     (`SlipstreamInstallation.supportsPull`; else offer Install/Update Slipstream), disk
-    (`DiskCheck`: block unless ≥ 10 GB stay free after the download, the user's rule; warn if the
-    ~same-size prepared copy won't fit).
+    (`DiskCheck`: block unless ≥ 10 GB stay free after the download, the user's rule; warn if
+    preparing won't fit: `Preparation.inPlace` = a twentieth + 12 GiB when Slipstream has
+    `--keep-gguf` and the setting is off, `.alongside` = the download again, `.none` for packages).
+  - **Keep GGUF files after preparing** (`keepGGUFFiles`, default off): passes `serve --keep-gguf`,
+    only to a launcher that has it (`supportsKeepGGUF`; older ones keep the files anyway).
   - **Progress:** `pull` prints no machine-readable progress. So the total comes from the Hub tree
     API and the bytes from the allocated size of the folder (partials are
     `.cache/huggingface/download/*.incomplete`; a package's files go to the Hub cache, measured too).
@@ -153,8 +188,10 @@ Part of the project context; see [the index](../PROJECT_CONTEXT.md).
   and start it to update/switch", and the menu detail says "restart to update to …".
 - **First-start preparation:** for a server the app started, the log's 53 `[DONE]` lines drive a
   progress bar in the panel header, with an ETA from the pace so far
-  (`preparationSecondsLeft`). The panel opens by itself when preparation begins.
-- **Dev aids:** `--download-model`, `--download <repo>`; `SLIPSTREAM_MENUBAR_MODEL_REPO` with
+  (`preparationSecondsLeft`). The panel opens by itself when preparation begins, and after setup's
+  Start for any model.
+- **Dev aids:** `--setup`, `--setup-preview`, `--setup-step N` (1–4), `--setup-hub <id or URL>`
+  (opens the Hugging Face dialog and checks), `--show-settings`, `--download-model`, `--download <repo>`; `SLIPSTREAM_MENUBAR_MODEL_REPO` with
   `SLIPSTREAM_MODELS=<scratch>` (e.g. `QuantFactory/SmolLM-360M-GGUF`, which pull accepts as GGUF;
   it is not Flash-Next, so only the download is meaningful) and `SLIPSTREAM_MENUBAR_LOG` (for staging a
   preparation with `fake-server.py --lock-repo … --outage 0 100000`, a fake checkout repo,

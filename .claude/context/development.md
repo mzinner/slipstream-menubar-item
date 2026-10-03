@@ -9,12 +9,15 @@ Part of the project context; see [the index](../PROJECT_CONTEXT.md).
 - **Toolchain:** Xcode 27 / Swift 6.4 locally. **CI builds with Swift 6.2.4** (GitHub `macos-15` +
   `setup-xcode latest-stable`), so the code must keep compiling there. The deployment target is
   macOS 15 (the Slipstream engine itself needs 26.4).
-- **Accounts:** `gh` is logged into the private account `mzinner` (it was `mariadb-MikeZinner`
+- **Accounts:** Hugging Face `hf` is logged in as `MikeZ75` (owner of the two Splash Q4 model
+  repositories). `gh` is logged into the private account `mzinner` (it was `mariadb-MikeZinner`
   earlier; the upstream PRs #3–#5 were opened from that one). The NAS git server is
   `ssh://192.168.10.245/volume1/Git/<name>`: bare repos, no `.git` suffix, `git init --bare -b main`.
 - **Models on this Mac:** in Slipstream's model store, `~/.slipstream/models/nitinpanj/`:
   `qwen38-flash-next-v3` (3 GGUF shards, `MTP/mtp-shared-Q4_K_M.gguf`, `prepared/`, ~200 GB) and
   `Swift-Qwen3.8-Flash-Next-Q4_0-Q8out-v3-GGUF` (the same layout, MTP head fetched by `pull`).
+  Both still hold their GGUF shards: the installed Slipstream is 26.10.3, which keeps them. With
+  26.10.4 the next serve of each deletes them (~191 GB) unless "Keep GGUF files" is on.
   The configured one is served as `nitinpanj/qwen38-flash-next-v3` on 127.0.0.1:8090.
 - **App config on this Mac** (`menubar.json`): repo `~/git/slipstream`, model
   `nitinpanj/qwen38-flash-next-v3` (moved from `~/models` on 2026-10-03), port 8090,
@@ -22,7 +25,7 @@ Part of the project context; see [the index](../PROJECT_CONTEXT.md).
 
 ## Testing recipes
 
-- **Unit tests:** `make test` (69 XCTest cases, including a real `/metrics` capture in
+- **Unit tests:** `make test` (92 XCTest cases, including a real `/metrics` capture in
   `Tests/.../Fixtures/metrics.txt`). `make app` builds `build/Slipstream Menubar.app`; `make run`
   opens it with `--show-panel`; `make install` copies it to /Applications (needed for Open at login).
 - **Visual checks:**
@@ -38,6 +41,19 @@ Part of the project context; see [the index](../PROJECT_CONTEXT.md).
   - Use `SLIPSTREAM_MENUBAR_CONFIG=<json>`, and stop it by its PID.
   - With `scripts/fake-server.py` (`--outage START END`, `--busy`, `--served N`, `--lock-repo DIR`),
     and a config whose `repoPath` is the fake repo, it shows gaps, busy-at-launch etc.
+- **Setup wizard and Settings without clicking:** `swift build`, then
+  `SLIPSTREAM_MENUBAR_CONFIG=/tmp/x.json .build/debug/SlipstreamMenubar --setup-preview --setup-step 3`
+  (or `--setup-hub <id>`, `--show-settings`). Capture one window by id: list
+  `CGWindowListCopyWindowInfo` from a `swift -e` one-liner (owner `SlipstreamMenubar` for the
+  debug binary, `Slipstream Menubar` for the bundle; title starts with "Setup"), then
+  `screencapture -x -o -l <id>`. Wait ~15 s after launch: `--setup-step` is applied after the
+  login-shell PATH lookup, and an earlier capture shows Welcome.
+- **Installer (`install.sh`) without touching /Applications:** `SLIPSTREAM_MENUBAR_DIR=<scratch>
+  SLIPSTREAM_MENUBAR_OPEN=0 sh install.sh` (optionally `SLIPSTREAM_MENUBAR_TAG`).
+- **A Hub model end to end:** `SLIPSTREAM_MODELS` and `HF_HUB_CACHE` under a scratch folder,
+  `./slipstream pull <repo>` from the checkout (detached), then `install/models.py --models … --model
+  … verify --full`, and a test server on another port (`serve --port 18091 --no-webui`); stop it with
+  `pkill -INT -f "server/server.py.*18091"`. Needs `iogpu.wired_limit_mb` raised (59392).
 - **App self-update end to end:** build an "old" copy with `MARKETING_VERSION=<older>
   scripts/build-app.sh`, copy it to a scratch folder (not `build/`, which the user runs from), run
   `"<copy>/Contents/MacOS/SlipstreamMenubar" --update-now`, then poll the bundle's
@@ -73,8 +89,17 @@ Part of the project context; see [the index](../PROJECT_CONTEXT.md).
 - `Sources/SlipstreamMenubar/AppDelegate.swift`: wiring, poll loop, `--show-panel`, `--snapshot`
   (renders the panel and menu bar samples to PNGs).
 - `.github/workflows/release.yml`: `v*` tag (or a manual run with an existing tag) → test, build with
-  `MARKETING_VERSION`, then `Slipstream-Menubar.app.<ver>.dmg` (app + Applications link),
-  `….zip` and `SHA256SUMS.<ver>.txt` to a GitHub release.
+  `MARKETING_VERSION`, then `Slipstream-Menubar.<ver>.dmg` (app + Applications link; no ".app" in
+  the name since 26.10.4), `Slipstream-Menubar.app.<ver>.zip` (the name the updater looks for),
+  `SHA256SUMS.<ver>.txt` and `install.sh` to a GitHub release. Notes: `## Install` (the
+  one-liner pinned to the tag) first, then `## Changes`.
+- `install.sh`: one-line install (POSIX sh, like Slipstream's): latest release or
+  `SLIPSTREAM_MENUBAR_TAG`, checksum, quits a running copy, installs into /Applications (or
+  ~/Applications), `xattr -dr com.apple.quarantine`, opens it. `--help` lists the options.
+- `Resources/models.json`, `Sources/SlipstreamMenubarCore/ModelManifest.swift`: the model manifest.
+- `Sources/SlipstreamMenubar/SetupCoordinator.swift`, `SetupWindow.swift`, `HubModelDialog.swift`;
+  Core `SetupProgress.swift`, `ModelCheck.swift` (`HubModelID`, `PullCheck`, one-model rule).
+- `scripts/stage-hub-package.py`: stage a prepared model for a Hugging Face upload (see slipstream.md).
 - `.claude/commands/checkpoint.md`: the `/checkpoint` command that maintains this file (committed).
 - `Sources/SlipstreamMenubarCore/Installation.swift`: `SlipstreamInstallation`, `InstallationLocator`
   (find, `serveLocks`, `loginShellPath`), `ReleasePackages` (select, version, superseded).
@@ -107,11 +132,10 @@ Part of the project context; see [the index](../PROJECT_CONTEXT.md).
 1. Commit and push `main` to both remotes.
 2. `git tag -a vYY.MM.N -m "Slipstream Menubar YY.MM.N"`, then `git push github vYY.MM.N` (and
    `origin`).
-3. The workflow (~1–3 min, macOS arm64 runners can queue) tests, builds, and publishes
-   `Slipstream-Menubar.app.<ver>.dmg` (~856 KB), `Slipstream-Menubar.app.<ver>.zip` (~756 KB) and
-   `SHA256SUMS.<ver>.txt`. The notes (`NOTES.md`, `body_path`) start with `## Changes`: `git log`
-   since the previous `v*` tag, without `.claude`-only commits; the update window shows that list,
-   so commit subjects are user-facing. Watch it with
+3. The workflow (~1–3 min, macOS arm64 runners can queue) tests, builds, and publishes the dmg,
+   the zip, `SHA256SUMS.<ver>.txt` and `install.sh`. The notes (`NOTES.md`, `body_path`) have
+   `## Install`, then `## Changes`: `git log` since the previous `v*` tag, without `.claude`-only
+   commits; the update window finds that list by its heading, so commit subjects are user-facing. Watch it with
    `gh run watch <id> -R mzinner/slipstream-menubar-item`. To rebuild an existing release's files:
    `gh workflow run release.yml -R mzinner/slipstream-menubar-item -f tag=vYY.MM.N`. It uploads
    the new files but does not delete old ones; remove those with `gh release delete-asset`.
@@ -119,5 +143,12 @@ Part of the project context; see [the index](../PROJECT_CONTEXT.md).
    **The runner has under 8 GB of RAM:** tests must not depend on this Mac's memory (v26.10.1 failed
    twice on that). If a tag's build fails before publishing, fix, commit, and move the tag
    (`git tag -d`, `git push <remote> :refs/tags/<tag>` on both remotes, re-tag, push).
+   **Replacing a published release** (the user's choice while nobody has downloaded it):
+   `git tag -f -a vX …` on the new `main`, `git push --force <remote> vX` on both; the tag push
+   rebuilds and the action overwrites same-named assets and the notes. GitHub's download URLs can
+   serve the old files (with their old, matching checksums) for a minute or two afterwards; installed
+   copies of that version are not offered the rebuild.
 4. Verify with `gh release download`, `shasum -a 256 -c`, the `Info.plist` version, and
    `codesign --verify --deep --strict`.
+5. Fork releases (`mzinner/slipstream`) come first when the app needs them: tag `main` there; its
+   workflow builds the package on `macos-26` in ~3 min.

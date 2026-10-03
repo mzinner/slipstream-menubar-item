@@ -5,10 +5,12 @@
 Native macOS (Swift 6 / SwiftUI + AppKit) menu bar item that starts, stops and watches a local
 [Slipstream](https://github.com/npanj/slipstream) LLM server checkout. The menu follows oMLX's
 menu bar app, reduced to: status, Start/Stop/Force Stop, Stats Panel, Open Web UI, Settings,
-About, Check for Updates, Quit. It also installs Slipstream and models, and updates itself. A
+About, Check for Updates, Quit. A first-run setup wizard installs Slipstream and a model and
+starts the server; the app also installs Slipstream and models from the menu, and updates itself. A
 floating panel shows live serving charts (throughput, KV cache, requests, engine memory) and system
 charts (CPU, GPU, memory, swap). Published on GitHub as `mzinner/slipstream-menubar-item` (public,
-MIT); latest release v26.10.2.
+MIT); latest release v26.10.5. One-line install:
+`curl -fsSL https://github.com/mzinner/slipstream-menubar-item/raw/main/install.sh | sh`.
 
 ## User decisions (keep unless asked to change)
 
@@ -31,6 +33,17 @@ MIT); latest release v26.10.2.
   must not mislabel a busy one ("Not responding" / "Loading model…" were both bugs).
 - **Settings:** the Access section has an API key (Generate/Copy), "Listen on the network", and
   Allowed hosts with explanations.
+- **Setup wizard:** sidebar layout from the user's design (since deleted; not in git); native
+  controls; window "Setup Slipstream"; Welcome uses the app icon and Slipstream's description; the
+  Stats panel (not a separate wait window) shows startup; "Open Web UI after server startup" on by
+  default; full model names with a GGUF / Splash Q4 tag; the Swift Splash Q4 package is the default.
+- **Models:** no size limit on Hub models (one model per repository instead); checks done by
+  Slipstream (`pull --check`) rather than the app where possible; converted packages are published
+  on Hugging Face as MikeZ75, public, license as the source, crediting the original authors.
+- **Settings:** "Keep GGUF files after preparing" (default off) with a one-line note, no versions;
+  models are added with "Choose from disk…" / "Load from Hugging Face…".
+- **Releases:** a release nobody downloaded yet is replaced in place (move the tag) rather than
+  bumped; the dmg is `Slipstream-Menubar.<v>.dmg`; notes show Install before Changes.
 - **Repo:** Swift; local NAS repo first, now public on GitHub (MIT) with the history credited to the
   private account via noreply; releases versioned `vYY.MM.N` (v26.10.0 = October 2026).
 
@@ -41,16 +54,18 @@ MIT); latest release v26.10.2.
 | `Sources/SlipstreamMenubarCore/` | testable logic: metrics, rates, status, config, installation, model checks, cleanup, system sampling |
 | `Sources/SlipstreamMenubar/` | AppKit menu, server control, SwiftUI panel, settings, installer and download windows |
 | `Tests/SlipstreamMenubarCoreTests/` | XCTest suite and the `/metrics` fixture |
-| `scripts/` | `build-app.sh`, `fake-server.py`, `make-icon.swift` |
+| `scripts/` | `build-app.sh`, `fake-server.py`, `make-icon.swift`, `stage-hub-package.py` |
+| `Resources/` | `Info.plist`, `AppIcon.icns`, `models.json` (the model manifest) |
+| `install.sh` | one-line installer, attached to every release |
 | `.github/workflows/release.yml` | tag → tested, signed build and GitHub release |
 
 ## Context files
 
 | File | What is in it |
 |---|---|
-| [context/architecture.md](context/architecture.md) | how the app works and why: targets, discovery, liveness, rates, history, installer, model download and picker, app self-update, uninstall, GPU limit, preparation progress |
-| [context/slipstream.md](context/slipstream.md) | what the app relies on from the Slipstream server, measured numbers, the Slipstream-side work and the fork, related repos |
-| [context/development.md](context/development.md) | environment, testing recipes, files that matter, release process |
+| [context/architecture.md](context/architecture.md) | how the app works and why: targets, discovery, liveness, rates, history, installer, model manifest, setup wizard, model download, picker and checks, app self-update, uninstall, GPU limit, preparation progress |
+| [context/slipstream.md](context/slipstream.md) | what the app relies on from the Slipstream server (incl. in-place preparation, `pull --check`), measured numbers, the fork and its branches, the Hugging Face packages, related repos |
+| [context/development.md](context/development.md) | environment, testing recipes (setup preview, installer, Hub end to end), files that matter, release process (incl. replacing a release) |
 
 ## Current state
 
@@ -58,30 +73,35 @@ MIT); latest release v26.10.2.
   - Start/Stop through the menu (SIGTERM → clean "Stopping"; SIGKILL after 30 s).
   - Detection on launch, staying Running under load, gap shading, memory stable (~12 MB with the
     panel closed, ~160–168 MB with it open, of which ~90 MB is GPU-owned graphics).
-  - Installing Slipstream from the fork's release (v26.10.1 now in `~/.local`, 26.10.0 kept), the
-    model download flow (tested with a tiny repo plus an extra file), New Model… checks against
-    real repos, the uninstall dry run (7 items), the running vs installed version display.
-  - Open Web UI (⌘O) works; the user confirmed it after a rebuild and relaunch.
-  - Settings observe the server controller, so the version shown refreshes after an update.
-  - App self-update: released 26.10.1 → 26.10.2 updated itself and relaunched (see
-    architecture.md).
-  - Model downloads through `slipstream pull` into `~/.slipstream/models` (26.10.3): the release
-    binary downloaded a test repo plus the MTP head through the Download window and saved the Hub id.
-  - 71 unit tests, plus the release workflow.
-- **Released:** v26.10.0, v26.10.1 (has the update check but retries a failed check on every
-  poll), v26.10.2, v26.10.3 (current: downloads via `slipstream pull`, needs Slipstream 26.10.3,
-  released first; ad-hoc signed, not notarized; a browser download needs *Open Anyway* or
-  `xattr -dr com.apple.quarantine`, an in-app update does not).
-- **This Mac:** Slipstream 26.10.3 installed in `~/.local` (26.10.2 kept). Both Flash-Next models
-  in `~/.slipstream/models/nitinpanj/`; the settings serve `nitinpanj/qwen38-flash-next-v3` (moved
-  from `~/models`, settings backed up beforehand). No server running at checkpoint time.
-- **The user's copy** was quit by the user during this session; it runs from `build/` (26.10.2
-  build) and will be offered 26.10.3 by its update check. There is no copy in /Applications.
-- **Not verified by Claude:** clicking Settings or the compact toggle in the live UI, Open at login
-  (needs the app in /Applications), the bottom-fade behaviour in the live window, a real full
-  uninstall (never run it on the user's Mac). Screenshots in the README were taken by the user.
+  - Installing Slipstream from the fork's release, the model download flow, the uninstall dry run
+    (7 items), the running vs installed version display, Open Web UI (⌘O), app self-update
+    (26.10.1 → 26.10.2), downloads through `slipstream pull` into `~/.slipstream/models`.
+  - Setup wizard: every step seen in screenshots (debug build, preview mode); the Hugging Face
+    dialog's check against the real Hub, through Slipstream's `pull --check` and the fallback.
+  - `install.sh` from the published release into a scratch folder (checksum, no quarantine left).
+  - Converter in place on a clone of the Swift GGUF: peak 102.6 GiB, byte-identical output.
+  - The Swift Splash Q4 package downloaded from the Hub, `verify --full`, served correctly.
+  - 92 unit tests, plus the release workflow.
+- **Released:** app v26.10.0 … v26.10.5. 26.10.4: setup wizard, in-place preparation setting,
+  `install.sh`. 26.10.5 (replaced in place three times; current files from `18a6ab7`): Splash Q4
+  packages as default, "Open Web UI after server startup", Stats panel after setup. Fork
+  Slipstream v26.10.4: in-place preparation, `--keep-gguf`, `pull --check`. Ad-hoc signed, not
+  notarized (`install.sh` clears the quarantine; a browser download needs *Open Anyway*).
+- **Hugging Face:** `MikeZ75/Swift-Qwen3.8-Flash-Next-V3-Splash` and
+  `MikeZ75/Qwen3.8-Flash-Next-V3-Splash` are public (see slipstream.md).
+- **This Mac:** Slipstream 26.10.3 in `~/.local` (26.10.2 kept); 26.10.4 not installed here. Both
+  Flash-Next GGUF models with their shards and `prepared/` in `~/.slipstream/models/nitinpanj/`; the
+  settings serve `nitinpanj/qwen38-flash-next-v3`. No server running. `iogpu.wired_limit_mb` is
+  59392.
+- **The user's copy** runs from `build/` (26.10.2 build); its update check offers 26.10.5. The user
+  ran the wizard on another Mac (found the focus-ring bug, fixed).
+- **Not verified by Claude:** clicking through setup for real (Install, a real download, Start,
+  the browser opening, the Stats panel opening after setup), the focus-ring fix (needs keyboard
+  focus), the base Splash Q4 package downloaded from the Hub, Open at login, a real full uninstall
+  (never run it on the user's Mac).
 - **Known:** the CI log warns that `actions/checkout@v4` and `softprops/action-gh-release@v2` target
-  Node 20 (forced to Node 24).
+  Node 20 (forced to Node 24). The model author's `nitinpanj/Swift-Qwen3.8-Flash-Next-Splash` is an
+  unfinished upload of the same Swift package (layers 0–19).
 
 ## Next steps
 
@@ -98,10 +118,9 @@ MIT); latest release v26.10.2.
    Swift 6.2 breakage earlier.
 8. A stable signing identity (self-signed certificate in the release workflow, or a Developer
    ID) would stop macOS asking for Keychain access after each update. Offered, not decided.
-9. Fork: `feat/gguf-hub-install` and `feat/slipstream-pull` are upstream-ready (see
-   slipstream.md); open them as PRs after #3/#4 merge. Slipstream's README still says
-   `hf download` + serve a folder; it could say `slipstream serve --model <owner/repo>` (the
-   author's text, left alone). `pull` does not check the GGUF architecture (New Model… does).
+9. Fork: `feat/gguf-hub-install` → `feat/slipstream-pull` → `feat/gguf-low-disk-prepare` →
+   `feat/pull-check` are upstream-ready (see slipstream.md); open them as PRs after #3/#4 merge.
+   Slipstream's README still says `hf download` + serve a folder (the author's text, left alone).
 10. Fork: the launcher now refuses the Splash 1.0 packages (minimal version, finished
    2026-10-02): `923c9fa` on `main`, and the same change alone on `fix/v2-only-packages`
    (`b2d9640`, on `upstream/main`) for a later PR. Pushed; released as fork v26.10.2. Left out on
@@ -109,8 +128,14 @@ MIT); latest release v26.10.2.
    example ids, `DEVELOPMENT.md`, benchmarks.
 11. Suggested to the user: install the 26.10.3 dmg into /Applications (Open at login needs it,
    and updates then have a normal home).
-12. `target/draft-vocab.bin` is not produced by the GGUF path (optional; it would speed up the MTP
-   draft head). It is on the Hub in `nitinpanj/Swift-Qwen3.8-Flash-Next-Splash`.
+12. `target/draft-vocab.bin` is not produced by the GGUF path; the Hub packages carry the author's
+   copy. The converter could write one (`models/qwen4exp/tools/draft_vocab.py`).
+13. The menu's Download Model… window still has its own "New Model…" section; offered to switch it
+   to the shared Hugging Face dialog, not decided.
+14. Installing Slipstream 26.10.4 on this Mac: the next serve of each prepared GGUF model deletes
+   its shards (~191 GB) unless "Keep GGUF files" is on; tell the user first.
+15. Maybe tell nitinpanj about the published Splash Q4 packages (their own Swift upload is
+   unfinished).
 
 ## Gotchas / things not to repeat
 
@@ -148,19 +173,29 @@ MIT); latest release v26.10.2.
   start the process from Python (`preexec_fn` restoring `SIG_DFL`), as `Process` does.
 - A long `"#…"# + "#…"#` raw-string concatenation inside `Data(...)` fails to type-check
   ("no exact matches"); build the `String` first.
+- SwiftUI: a `Button` whose label changes keeps its focus ring at the old size: give it `.id(title)`.
+  A `TextField` in a `.sheet` can write `""` back into its binding as the sheet appears: set the
+  text before presenting, and match async results by a counter, not by the text. `Text("a" + "b")`
+  is a `String`, so `**bold**` stays literal: use one literal.
+- Python scripts using `ProcessPoolExecutor` need `if __name__ == "__main__":` on macOS (spawn).
+- Foreground `sleep` is blocked in this environment: wait with an `until …; do sleep N; done` loop.
+- `hf upload-large-folder` (deprecated for `hf upload`, still works) prints status every minute;
+  Xet dedups against data already on the Hub. Detach long uploads (2-hour task limit).
+- Moving a release tag: GitHub serves the old assets for a minute or two afterwards.
 
 ## Git state
 
 ```
 $ git status --short
  M .claude/PROJECT_CONTEXT.md
+ M .claude/context/architecture.md
+ M .claude/context/development.md
  M .claude/context/slipstream.md
 $ git branch --show-current
 main
 ```
 
-At checkpoint time: only this checkpoint's context edits are uncommitted, and they are committed
-and pushed to both remotes right after. `main` and tag v26.10.3 are pushed to both remotes
-(`slipstream-pull` is merged into `main`). The Slipstream fork's `main` (`18815d8`), tag v26.10.3
-and the upstream-ready branches `feat/gguf-hub-install` and `feat/slipstream-pull` are pushed to
-`mzinner`.
+At checkpoint time: only this checkpoint's context edits are uncommitted; they are committed and
+pushed to both remotes right after. `main` (`18a6ab7` before the checkpoint), `feat/setup-wizard`
+(merged) and tags up to v26.10.5 are on both remotes. Slipstream fork: `main` (`9ada146`), tag
+v26.10.4, and the branches `feat/gguf-low-disk-prepare` and `feat/pull-check` are on `mzinner`.

@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var uninstaller: UninstallWindowController!
     private var updater: AppUpdateWindowController!
     private var setup: SetupWindowController!
+    private var startup: StartupWindowController!
     private var pollTask: Task<Void, Never>?
     private var menuOpen = false
 
@@ -42,12 +43,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // `--setup-preview`: setup to click through, with nothing installed, downloaded,
         // started or saved.
         let setupPreview = CommandLine.arguments.contains("--setup-preview")
+        startup = StartupWindowController(server: server)
         setup = SetupWindowController(coordinator: SetupCoordinator(
             server: server,
             preview: setupPreview,
             saveConfig: { [weak self] config in self?.saveConfig(config) },
             startServer: { [weak self] in self?.startServer() },
-            openSettings: { [weak self] in self?.settings.show() }))
+            openSettings: { [weak self] in self?.settings.show() },
+            showStartup: { [weak self] openWebUI, simulated in
+                self?.startup.show(openWebUI: openWebUI, simulated: simulated)
+            }))
         settings = SettingsWindowController(
             server: server,
             save: { [weak self] config, key, restart in self?.apply(config, apiKey: key, restart: restart) },
@@ -135,6 +140,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if CommandLine.arguments.contains("--update-now") { updateWithoutAsking() }
         if CommandLine.arguments.contains("--show-panel") { panel.show() }
         if CommandLine.arguments.contains("--show-settings") { settings.show() }
+        if CommandLine.arguments.contains("--startup-preview") { startup.show(openWebUI: false, simulated: true) }
         // Development aid: opens the installer and starts the download at once.
         if CommandLine.arguments.contains("--install-latest") { installer.show(startImmediately: true) }
         // Development aids: the model picker, or one catalog model's download, at once.

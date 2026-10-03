@@ -5,7 +5,7 @@ import SwiftUI
 /// The first-run setup window: a step sidebar, the step, and a footer with Back and the
 /// step's actions. Fixed size; Escape does not close it.
 @MainActor
-final class SetupWindowController: NSObject, NSWindowDelegate {
+final class SetupWindowController: NSObject {
     let coordinator: SetupCoordinator
     private var window: NSWindow?
 
@@ -25,7 +25,6 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
             window.title = coordinator.preview
                 ? "Setup Slipstream (Preview: nothing is installed or downloaded)" : "Setup Slipstream"
             window.isReleasedWhenClosed = false
-            window.delegate = self
             window.contentView = NSHostingView(rootView: SetupView(setup: coordinator))
             window.center()
             self.window = window
@@ -34,9 +33,6 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         window?.makeKeyAndOrderFront(nil)
     }
 
-    func windowWillClose(_ notification: Notification) {
-        coordinator.stopWatchingStart()
-    }
 }
 
 /// Escape does nothing: setup closes only with its close button or by finishing.
@@ -126,12 +122,10 @@ private struct SetupFooter: View {
         HStack {
             if setup.step != .welcome {
                 Button("Back") { setup.step = SetupStep(rawValue: setup.step.rawValue - 1) ?? .welcome }
-                    .disabled(setup.starting)
             }
             Spacer()
             if setup.step == .server {
                 Button("Open settings…") { setup.openSettingsInstead() }
-                    .disabled(setup.starting)
             }
             let primary = primaryAction
             Button(primary.title, action: primary.action)
@@ -162,7 +156,6 @@ private struct SetupFooter: View {
                     setup.downloadAndContinue)
         case .server:
             if setup.isDownloading { return ("Downloading model…", false, {}) }
-            if setup.starting { return ("Starting…", false, {}) }
             return ("Start server", setup.modelPresent, setup.start)
         }
     }
@@ -469,7 +462,6 @@ private struct ServerStep: View {
             if setup.webUIAvailable {
                 Toggle("Open Web UI after server startup", isOn: $setup.openWebUIAfterStart)
                     .toggleStyle(.checkbox)
-                    .disabled(setup.starting)
                     .padding(.top, 12)
             }
             if let phase = setup.downloadPhase {

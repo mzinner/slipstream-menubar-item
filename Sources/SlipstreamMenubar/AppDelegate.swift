@@ -53,7 +53,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             save: { [weak self] config, key, restart in self?.apply(config, apiKey: key, restart: restart) },
             install: { [weak self] in self?.installer.show() },
             downloadModel: { [weak self] model in
-                if let model { self?.modelWindow.show(model: model) } else { self?.modelWindow.show(newModel: true) }
+                guard let model else { self?.modelWindow.show(newModel: true); return }
+                // One added in Settings may not be saved yet; the download keeps it listed.
+                self?.addCustomModel(model)
+                self?.modelWindow.show(model: model)
             },
             uninstall: { [weak self] in self?.uninstaller.show() },
             runSetup: { [weak self] in self?.setup.show() })
@@ -108,7 +111,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                    CommandLine.arguments.indices.contains(index + 1) {
                     self.setup.coordinator.step = .model
                     self.setup.coordinator.openHubDialog(input: CommandLine.arguments[index + 1])
-                    self.setup.coordinator.checkHubModel()
+                    self.setup.coordinator.hubChecker.check()
                 }
             } else {
                 self.setup.coordinator.completeSilently()
@@ -131,6 +134,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if CommandLine.arguments.contains("--check-updates") { updater.show(check: true) }
         if CommandLine.arguments.contains("--update-now") { updateWithoutAsking() }
         if CommandLine.arguments.contains("--show-panel") { panel.show() }
+        if CommandLine.arguments.contains("--show-settings") { settings.show() }
         // Development aid: opens the installer and starts the download at once.
         if CommandLine.arguments.contains("--install-latest") { installer.show(startImmediately: true) }
         // Development aids: the model picker, or one catalog model's download, at once.

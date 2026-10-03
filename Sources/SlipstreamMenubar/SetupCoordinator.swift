@@ -30,8 +30,8 @@ final class SetupCoordinator: ObservableObject {
     @Published private(set) var downloader: ModelDownloader?
     /// The "Model from Hugging Face" dialog.
     @Published var hubDialogOpen = false
-    @Published var hubInput = ""
-    @Published private(set) var hubCheck: ModelPicker.NewModelState = .idle
+    private(set) lazy var hubChecker = HubModelChecker(installation: { [weak self] in self?.installation },
+                                                       searchPath: { [weak self] in self?.server.searchPath ?? [] })
     @Published var startError: String?
     @Published private(set) var starting = false
 
@@ -254,51 +254,14 @@ final class SetupCoordinator: ObservableObject {
     // MARK: Model from Hugging Face
 
     func openHubDialog(input: String? = nil) {
-        if let input {
-            hubInput = input
-        } else if case .hub(let spec) = selection {
-            hubInput = spec.repository
-        }
-        hubCheckedInput = hubInput
-        hubCheck = .idle
+        var text = input ?? ""
+        if input == nil, case .hub(let spec) = selection { text = spec.repository }
+        hubChecker.reset(input: text)
         hubDialogOpen = true
     }
 
-    /// Checks the pasted id the way New Model… does: a Slipstream package, or
-    /// Qwen3.8-Flash-Next GGUF files.
-    func checkHubModel() {
-        guard let repository = HubModelID.parse(hubInput) else {
-            hubCheck = .unsuitable("That is not a Hugging Face model id. Enter it as owner/name, "
-                + "or paste the model page's address.")
-            return
-        }
-        hubInput = repository
-        hubCheckedInput = repository
-        hubCheck = .checking
-        hubCheckNumber += 1
-        let number = hubCheckNumber
-        Task {
-            let result = await ModelPicker.check(repository, installation: installation,
-                                                 searchPath: server.searchPath)
-            // A newer check, or an edit since, wins.
-            if number == hubCheckNumber { hubCheck = result }
-        }
-    }
-
-    private var hubCheckNumber = 0
-    private var hubCheckedInput = ""
-
-    /// An edit makes an earlier result stale.
-    func hubInputChanged() {
-        guard hubInput != hubCheckedInput else { return }
-        hubCheckedInput = hubInput
-        if case .checking = hubCheck { return }
-        hubCheck = .idle
-    }
-
     /// Takes the checked model; it is kept in Settings next to the catalog.
-    func useHubModel() {
-        guard case .suitable(let spec, _) = hubCheck else { return }
+    func useHubModel(_ spec: ModelSpec) {
         modelError = nil
         selection = .hub(spec)
         hubDialogOpen = false

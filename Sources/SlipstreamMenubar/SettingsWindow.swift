@@ -125,7 +125,7 @@ private struct SettingsView: View {
                     } else {
                         InstalledRelease(installation: installation, install: install)
                     }
-                    ModelChoice(model: $config.model, models: server.config.availableModels,
+                    ModelChoice(config: $config, installation: installation, searchPath: server.searchPath,
                                 download: downloadModel)
                     TextField("Port", text: $port)
                     TextField("Max context", text: $config.maxContext, prompt: Text("auto, e.g. 100K"))
@@ -340,34 +340,43 @@ private struct InstalledRelease: View {
 
 /// The model picker: the supported models and those added with New Model…, a custom
 /// folder or Hub id, or New Model… to add one.
+/// The model to serve: the catalog, models added before, or a folder; and the two ways to
+/// add one, from disk or from Hugging Face (the dialog setup uses too).
 private struct ModelChoice: View {
-    @Binding var model: String
-    let models: [ModelSpec]
+    @Binding var config: ServerConfig
     let download: (ModelSpec?) -> Void
 
     private enum Choice: Hashable {
+        case none
         case model(String)  // repository
-        case custom
-        case new
+        case other(String)  // a folder, or a Hub id typed in an older version
     }
 
-    @State private var customOpen = false
+    @StateObject private var hub: HubModelChecker
+    @State private var hubOpen = false
+    @State private var diskError: String?
+
+    init(config: Binding<ServerConfig>, installation: SlipstreamInstallation?, searchPath: [String],
+         download: @escaping (ModelSpec?) -> Void) {
+        _config = config
+        self.download = download
+        _hub = StateObject(wrappedValue: HubModelChecker(installation: { installation }, searchPath: { searchPath }))
+    }
+
+    private var models: [ModelSpec] { config.availableModels }
+    private var model: String { config.model.trimmingCharacters(in: .whitespaces) }
 
     private var selection: Binding<Choice> {
         Binding(
             get: {
-                if customOpen { return .custom }
-                return ModelSpec.matching(model: model, in: models).map { .model($0.repository) } ?? .custom
+                if model.isEmpty { return .none }
+                return ModelSpec.matching(model: model, in: models).map { .model($0.repository) } ?? .other(model)
             },
             set: { choice in
                 switch choice {
-                case .model(let repository):
-                    customOpen = false
-                    if let spec = models.first(where: { $0.repository == repository }) { model = spec.repository }
-                case .custom:
-                    customOpen = true
-                case .new:
-                    download(nil)
+                case .none: break
+                case .model(let repository): config.model = repository
+                case .other(let path): config.model = path
                 }
             })
     }
@@ -375,14 +384,34 @@ private struct ModelChoice: View {
     var body: some View {
         let current = ModelSpec.matching(model: model, in: models)
         Picker("Model", selection: selection) {
+            if model.isEmpty { Text("None").tag(Choice.none) }
             ForEach(models, id: \.repository) { spec in
-                Text("\(spec.title) (\(spec.memoryNote))").tag(Choice.model(spec.repository))
+                Text("\(spec.title) (\(spec.kind.formatLabel), \(spec.memoryNote))").tag(Choice.model(spec.repository))
             }
-            Divider()
-            Text("Custom folder or Hub id").tag(Choice.custom)
-            Text("New Model…").tag(Choice.new)
+            if current == nil, !model.isEmpty {
+                Divider()
+                Text(isHubID(model) ? "Hugging Face: \(model)" : "Folder: \((model as NSString).lastPathComponent)")
+                    .tag(Choice.other(model))
+            }
         }
-        if let current, !customOpen {
+        HStack {
+            Spacer()
+            Button("Choose from disk…", action: chooseFolder)
+            Button("Load from Hugging Face…") {
+                hub.reset()
+                hubOpen = true
+            }
+            .sheet(isPresented: $hubOpen) {
+                HubModelDialog(checker: hub, use: { spec in
+                    add(spec)
+                    hubOpen = false
+                }, cancel: { hubOpen = false })
+            }
+        }
+        if let diskError {
+            Text(diskError).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+        }
+        if let current {
             HStack {
                 Text(current.folder).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                 Spacer()
@@ -397,16 +426,43 @@ private struct ModelChoice: View {
                 Text("This Mac has \(MachineCheck.memoryGiB) GB of memory; this model needs a \(current.memoryNote).")
                     .font(.caption).foregroundStyle(.orange)
             }
-        } else {
-            PathField(label: "Folder or Hub id", path: $model, directoriesOnly: true,
-                      help: "A folder with GGUF files or a Slipstream package, or a Hugging Face id, which "
-                          + "the server downloads into \(ModelStore.root.path) on its first start")
-            if !ModelPresence.isAvailable(model) {
-                Text(isHubID(model) ? "Not downloaded yet: the server downloads it on its first start."
-                                    : "No model at this location.")
-                    .font(.caption).foregroundStyle(.orange)
+        } else if !model.isEmpty {
+            HStack {
+                Text((model as NSString).abbreviatingWithTildeInPath)
+                    .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                Spacer()
+                if !ModelPresence.isAvailable(model) {
+                    Text(isHubID(model) ? "Not downloaded yet: the server downloads it on its first start."
+                                        : "No model at this location.")
+                        .font(.caption).foregroundStyle(.orange)
+                }
             }
         }
+    }
+
+    /// A folder with a model's GGUF files or a prepared Slipstream package.
+    private func chooseFolder() {
+        let panel = NSOpenPanel()
+        panel.message = "Choose a folder with a model's GGUF files or a prepared Slipstream package."
+        panel.prompt = "Use"
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard ModelPresence.isAvailable(url.path) else {
+            diskError = "\(url.lastPathComponent) holds no GGUF files or prepared package. "
+                + "Choose the folder the model's files are in."
+            return
+        }
+        diskError = nil
+        config.model = url.path
+    }
+
+    /// The checked model becomes the chosen one, and is listed from now on.
+    private func add(_ spec: ModelSpec) {
+        diskError = nil
+        if !models.contains(where: { $0.repository == spec.repository }) { config.customModels.append(spec) }
+        config.model = spec.repository
     }
 }
 

@@ -122,6 +122,12 @@ private struct SettingsView: View {
                     TextField("Port", text: $port)
                     TextField("Max context", text: $config.maxContext, prompt: Text("auto, e.g. 100K"))
                     TextField("Max memory", text: $config.maxMemory, prompt: Text("auto, e.g. 48G"))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Toggle("Keep GGUF files after preparing", isOn: $config.keepGGUFFiles)
+                            .disabled(installation.map { !$0.supportsKeepGGUF } ?? false)
+                        Text(ggufNote(installation)).font(.caption).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 SwiftUI.Section("Memory") {
                     Toggle("Raise the GPU memory limit before starting", isOn: $config.raiseGPULimit)
@@ -205,6 +211,18 @@ private struct SettingsView: View {
     }
 
     /// What the GPU limit step does on this Mac.
+    private func ggufNote(_ installation: SlipstreamInstallation?) -> String {
+        if let installation, !installation.supportsKeepGGUF {
+            return "\(installation.displayName) always keeps them: preparing a GGUF model then needs "
+                + "its size again on disk. Slipstream 26.10.4 or later uses them up instead."
+        }
+        return config.keepGGUFFiles
+            ? "A GGUF model's files stay next to the package prepared from them on its first start, "
+              + "which needs the model's size again on disk."
+            : "Preparing a GGUF model on its first start uses its files up as it converts them, so "
+              + "it needs little more disk than the model. Preparing again means downloading again."
+    }
+
     private var gpuNote: String {
         let current = GPUMemoryLimit.currentMB().map { $0 == 0 ? "the macOS default" : "\($0) MB" } ?? "unknown"
         let applies = MachineCheck.needsGPULimitRaise()
@@ -425,7 +443,7 @@ private struct DownloadedModels: View {
         alert.messageText = "Delete \(item.title)?"
         alert.informativeText = "Removes \((item.url.path as NSString).abbreviatingWithTildeInPath)"
             + (sizes[item.id].map { " (\(ByteCountFormatter.string(fromByteCount: $0, countStyle: .file)))" } ?? "")
-            + (item.title.contains("Flash-Next") ? ", including the copy prepared on its first start" : "") + "."
+            + (item.title.contains("Flash-Next") ? ", including the package prepared on its first start" : "") + "."
             + (inUse ? " The server is running this model and is stopped first." : "")
             + " It cannot be undone."
         alert.alertStyle = .warning

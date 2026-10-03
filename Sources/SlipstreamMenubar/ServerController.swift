@@ -248,7 +248,7 @@ final class ServerController: ObservableObject {
         try? fileManager.moveItem(at: Self.logURL, to: previousLog)
 
         let launcher = installation.launcher.path
-        let arguments = [launcher] + config.serveArguments()
+        let arguments = [launcher] + config.serveArguments(for: installation)
         var environment = ProcessInfo.processInfo.environment
         // Apps get a minimal PATH; the launcher's build steps need the usual tools.
         environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"

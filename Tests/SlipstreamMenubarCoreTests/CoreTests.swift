@@ -269,6 +269,17 @@ final class NetworkAccessTests: XCTestCase {
         XCTAssertTrue(checkout.supportsPull)
         config.listenOnNetwork = false
         XCTAssertFalse(config.validationErrors(installation: checkout).contains { $0.contains("--host") })
+
+        // Keeping GGUF files is asked for only from a launcher that knows the flag; older ones keep them anyway.
+        config.keepGGUFFiles = true
+        XCTAssertFalse(checkout.supportsKeepGGUF)
+        XCTAssertFalse(config.serveArguments(for: checkout).contains("--keep-gguf"))
+        try Data(#"server.add_argument("--keep-gguf", action="store_true")"#.utf8).write(to: launcher)
+        XCTAssertTrue(checkout.supportsKeepGGUF)
+        XCTAssertEqual(config.serveArguments(for: checkout).last, "--keep-gguf")
+        XCTAssertFalse(config.serveArguments().contains("--keep-gguf"))
+        config.keepGGUFFiles = false
+        XCTAssertFalse(config.serveArguments(for: checkout).contains("--keep-gguf"))
     }
 
     func testAddressesExcludeLoopback() {
@@ -672,9 +683,25 @@ final class ModelCatalogTests: XCTestCase {
 
     func testPackagesNeedNoRoomForAPreparedCopy() {
         let gb: Int64 = 1_000_000_000
-        XCTAssertEqual(DiskCheck.evaluate(total: 20 * gb, downloaded: 0, free: 35 * gb, prepares: false), .ok)
-        XCTAssertEqual(DiskCheck.evaluate(total: 20 * gb, downloaded: 0, free: 35 * gb, prepares: true),
+        XCTAssertEqual(DiskCheck.evaluate(total: 20 * gb, downloaded: 0, free: 35 * gb, preparation: .none), .ok)
+        XCTAssertEqual(DiskCheck.evaluate(total: 20 * gb, downloaded: 0, free: 35 * gb, preparation: .alongside),
                        .noRoomToPrepare(shortBy: 15 * gb), "35 - 20 - 20 leaves -5 GB, 15 GB short of the reserve")
+    }
+
+    func testPreparingInPlaceNeedsATwentiethAndThePartsInFlight() {
+        let gb: Int64 = 1_000_000_000
+        let inFlight: Int64 = 12 * 1_073_741_824
+        // A 100 GB model: 5 GB of growth plus 12.9 GB in flight, not another 100 GB.
+        XCTAssertEqual(DiskCheck.Preparation.inPlace.bytes(total: 100 * gb), 5 * gb + inFlight)
+        XCTAssertEqual(DiskCheck.evaluate(total: 100 * gb, downloaded: 0, free: 115 * gb + inFlight,
+                                          preparation: .inPlace), .ok)
+        XCTAssertEqual(DiskCheck.evaluate(total: 100 * gb, downloaded: 0, free: 115 * gb + inFlight,
+                                          preparation: .alongside), .noRoomToPrepare(shortBy: 95 * gb - inFlight))
+    }
+
+    func testOlderSettingsUseGGUFFilesUp() throws {
+        let config = try JSONDecoder().decode(ServerConfig.self, from: Data(#"{"model": "a/b"}"#.utf8))
+        XCTAssertFalse(config.keepGGUFFiles)
     }
 }
 

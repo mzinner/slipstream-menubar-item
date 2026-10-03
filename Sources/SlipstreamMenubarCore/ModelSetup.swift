@@ -287,19 +287,39 @@ public enum DiskCheck {
         /// The download would leave less than the reserve: it must not start.
         /// `shortBy` is how much more space it needs.
         case insufficient(shortBy: Int64)
-        /// The download fits, but the first start's prepared copy (about the size of the
-        /// download again) would not. A warning, not a block.
+        /// The download fits, but preparing it on the first start would not. A warning,
+        /// not a block.
         case noRoomToPrepare(shortBy: Int64)
     }
 
-    /// `downloaded` is what an earlier, stopped download already left on disk; `prepares`
-    /// says whether the first start writes a prepared copy (GGUF models do, packages don't).
-    public static func evaluate(total: Int64, downloaded: Int64, free: Int64, prepares: Bool = true) -> Verdict {
+    /// What the first start writes besides the download.
+    public enum Preparation: Equatable, Sendable {
+        /// A package: served as downloaded.
+        case none
+        /// GGUF files converted while they are used up (Slipstream with `--keep-gguf`, not
+        /// passed): the package is a little larger than the files, and a few parts are
+        /// written before their source is freed.
+        case inPlace
+        /// GGUF files kept: the prepared copy is about the size of the download again.
+        case alongside
+
+        public func bytes(total: Int64) -> Int64 {
+            switch self {
+            case .none: return 0
+            // Slipstream's own estimate: a twentieth, plus up to 8 workers' 1.5 GiB layers.
+            case .inPlace: return total / 20 + 12 * 1_073_741_824
+            case .alongside: return total
+            }
+        }
+    }
+
+    /// `downloaded` is what an earlier, stopped download already left on disk.
+    public static func evaluate(total: Int64, downloaded: Int64, free: Int64,
+                                preparation: Preparation = .alongside) -> Verdict {
         let remaining = max(0, total - downloaded)
         let afterDownload = free - remaining
         if afterDownload < reserveBytes { return .insufficient(shortBy: reserveBytes - afterDownload) }
-        guard prepares else { return .ok }
-        let afterPreparing = afterDownload - total
+        let afterPreparing = afterDownload - preparation.bytes(total: total)
         if afterPreparing < reserveBytes { return .noRoomToPrepare(shortBy: reserveBytes - afterPreparing) }
         return .ok
     }

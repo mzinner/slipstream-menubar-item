@@ -31,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         modelWindow = ModelWindowController(
             searchPath: { [weak self] in self?.server.searchPath ?? [] },
             installation: { [weak self] in self?.server.installation },
+            keepsGGUFFiles: { [weak self] in self?.server.config.keepGGUFFiles ?? false },
             installSlipstream: { [weak self] in self?.installer.show() },
             models: { [weak self] in self?.server.config.availableModels ?? ModelSpec.catalog },
             addModel: { [weak self] model in self?.addCustomModel(model) },

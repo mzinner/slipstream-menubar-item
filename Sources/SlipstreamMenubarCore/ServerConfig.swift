@@ -33,6 +33,9 @@ public struct ServerConfig: Codable, Equatable, Sendable {
     public var gpuWiredLimitMB: Int
     /// Models added with "New Model…", offered next to the catalog.
     public var customModels: [ModelSpec]
+    /// Keep a downloaded GGUF model's files once it is prepared (`--keep-gguf`). Off, the
+    /// first start uses them up while converting, so it needs little more disk than the model.
+    public var keepGGUFFiles: Bool
 
     public static let defaultReleaseRepository = "mzinner/slipstream"
 
@@ -51,7 +54,8 @@ public struct ServerConfig: Codable, Equatable, Sendable {
         checkForAppUpdates: Bool = true,
         raiseGPULimit: Bool = true,
         gpuWiredLimitMB: Int = GPUMemoryLimit.recommendedMB,
-        customModels: [ModelSpec] = []
+        customModels: [ModelSpec] = [],
+        keepGGUFFiles: Bool = false
     ) {
         self.useCheckout = useCheckout
         self.repoPath = repoPath
@@ -68,6 +72,7 @@ public struct ServerConfig: Codable, Equatable, Sendable {
         self.raiseGPULimit = raiseGPULimit
         self.gpuWiredLimitMB = gpuWiredLimitMB
         self.customModels = customModels
+        self.keepGGUFFiles = keepGGUFFiles
     }
 
     /// Settings saved by an older version lack newer keys; those take their defaults.
@@ -93,6 +98,7 @@ public struct ServerConfig: Codable, Equatable, Sendable {
         raiseGPULimit = try container.decodeIfPresent(Bool.self, forKey: .raiseGPULimit) ?? defaults.raiseGPULimit
         gpuWiredLimitMB = try container.decodeIfPresent(Int.self, forKey: .gpuWiredLimitMB) ?? defaults.gpuWiredLimitMB
         customModels = (try? container.decodeIfPresent([ModelSpec].self, forKey: .customModels)) ?? defaults.customModels
+        keepGGUFFiles = try container.decodeIfPresent(Bool.self, forKey: .keepGGUFFiles) ?? defaults.keepGGUFFiles
     }
 
     /// The catalog, then the models added with "New Model…" (not repeating any).
@@ -114,8 +120,8 @@ public struct ServerConfig: Codable, Equatable, Sendable {
     /// The checkout's lock, also watched in release mode in case one runs from there.
     public var serveLockURL: URL { repoURL.appendingPathComponent("build/runtime/serve.lock") }
 
-    /// Arguments after the launcher path.
-    public func serveArguments() -> [String] {
+    /// Arguments after the launcher path, for `installation` when known.
+    public func serveArguments(for installation: SlipstreamInstallation? = nil) -> [String] {
         var arguments = ["serve", "--model", (model as NSString).expandingTildeInPath, "--port", String(port)]
         // The default needs no flag, which keeps launchers without --host working.
         if listenOnNetwork { arguments += ["--host", host] }
@@ -127,6 +133,8 @@ public struct ServerConfig: Codable, Equatable, Sendable {
             arguments += ["--allowed-host", host]
         }
         if noWebUI { arguments.append("--no-webui") }
+        // A Slipstream without the flag keeps the files anyway.
+        if keepGGUFFiles, installation?.supportsKeepGGUF == true { arguments.append("--keep-gguf") }
         return arguments
     }
 

@@ -12,6 +12,7 @@ final class ModelWindowController: NSObject, NSWindowDelegate {
     private let searchPath: () -> [String]
     /// The Slipstream whose `pull` downloads the model.
     private let installation: () -> SlipstreamInstallation?
+    private let keepsGGUFFiles: () -> Bool
     /// "Install Slipstream…", which also updates an installed one.
     private let installSlipstream: () -> Void
     /// The catalog plus models added with New Model…
@@ -23,11 +24,12 @@ final class ModelWindowController: NSObject, NSWindowDelegate {
     private let openSettings: () -> Void
 
     init(searchPath: @escaping () -> [String], installation: @escaping () -> SlipstreamInstallation?,
-         installSlipstream: @escaping () -> Void, models: @escaping () -> [ModelSpec],
+         keepsGGUFFiles: @escaping () -> Bool, installSlipstream: @escaping () -> Void, models: @escaping () -> [ModelSpec],
          addModel: @escaping (ModelSpec) -> Void, onDownloaded: @escaping (ModelSpec) -> Void,
          startServer: @escaping () -> Void, openSettings: @escaping () -> Void) {
         self.searchPath = searchPath
         self.installation = installation
+        self.keepsGGUFFiles = keepsGGUFFiles
         self.installSlipstream = installSlipstream
         self.models = models
         self.addModel = addModel
@@ -112,8 +114,10 @@ final class ModelWindowController: NSObject, NSWindowDelegate {
             return
         }
         let free = MachineCheck.freeDiskBytes(at: model.folderURL) ?? 0
+        let preparation: DiskCheck.Preparation = model.kind != .gguf ? .none
+            : installation()?.supportsKeepGGUF == true && !keepsGGUFFiles() ? .inPlace : .alongside
         switch DiskCheck.evaluate(total: total, downloaded: downloader.downloadedBytes, free: free,
-                                  prepares: model.kind == .gguf) {
+                                  preparation: preparation) {
         case .ok:
             break
         case .insufficient(let shortBy):
@@ -125,9 +129,12 @@ final class ModelWindowController: NSObject, NSWindowDelegate {
             return
         case .noRoomToPrepare(let shortBy):
             let answer = ask("Little room left to prepare the model",
-                             "The download fits, but on its first start Slipstream writes a prepared copy "
-                             + "of about \(bytes(total)) next to it, which needs \(bytes(shortBy)) more than "
-                             + "is free. You can make room before starting the server.",
+                             (preparation == .inPlace
+                                ? "The download fits, but on its first start Slipstream converts it, which "
+                                  + "needs about \(bytes(preparation.bytes(total: total))) on top of it while it runs, "
+                                : "The download fits, but on its first start Slipstream writes a prepared copy "
+                                  + "of about \(bytes(total)) next to it, ")
+                             + "\(bytes(shortBy)) more than is free. You can make room before starting the server.",
                              buttons: ["Download", "Cancel"], style: .warning)
             guard answer == .alertFirstButtonReturn else {
                 window?.close()

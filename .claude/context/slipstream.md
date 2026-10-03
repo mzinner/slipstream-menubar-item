@@ -66,11 +66,40 @@ Part of the project context; see [the index](../PROJECT_CONTEXT.md).
 ## Related repos
 
 - `~/git/slipstream`: Slipstream checkout. On `main`, which tracks the fork `mzinner/slipstream`:
-  upstream plus PRs #3 (issue #1 fixes), #4 (GGUF conversion without reference, memory caps) and #5
-  (`serve --host`) as a linear stack, then the fork's own commits (release workflow, converter
-  folder fix, v2-only packages, Hub-id install, `pull`). Remotes: `upstream` (npanj), `mzinner` (fork), `fork`
-  (mariadb-MikeZinner, holds the open PR branches). Update with `git fetch upstream && git rebase
-  upstream/main && git push --force-with-lease mzinner main`.
+  **upstream `main` (`21d8956`) plus exactly the commits of the open PRs #7–#10** (10 commits,
+  `main` = `feat/pull-check` + #9 + #10). Branches: `feat/gguf-in-place` (#7),
+  `feat/pull-check` (#8), `docs/install-and-model-locations` (#9), `fix/release-install-repo`
+  (#10), `fix/ci-green` (the two CI commits alone, pushed for reference). Remotes: `upstream`
+  (npanj), `mzinner` (fork), `fork` (mariadb-MikeZinner: still holds the closed #3–#5 branches; not
+  logged in, left alone). Update with `git fetch upstream && git rebase upstream/main && git push
+  --force-with-lease mzinner main`. `make install-development` (done) adds the dev requirements
+  (`openai`, `ruff`) the full test run and lint need.
+- **Upstream state (2026-10-03):** the maintainer took the fork's whole `main` as of v26.10.3
+  (`18815d8`) by fast-forward, so the release workflow, `install.sh`, the model store, Hub-id
+  install, `pull`, v2-only packages and the converter folder fix are all upstream; #3–#5 show as
+  closed, not merged. Upstream then added 4 commits (runtime fixes, docs, `install.sh` defaulting
+  to `npanj/slipstream`, a launcher branch for a folder with only `prepared/`) and **published its
+  own Slipstream 26.10.4** from that, which lacks in-place preparation and `--check`: the version
+  clashes with our fork's 26.10.4, so the fork's next release is 26.10.5+.
+- **Open PRs from `mzinner` (all CI green):** #7 in-place preparation (+ README disk/first-start),
+  #8 `pull --check` (+ README, release notes; contains #7), #9 docs: where Slipstream installs and
+  keeps models and why (`~/.local` like Claude Code/pipx/uv, installer modelled on MariaDB Shell's;
+  `~/.slipstream/models` like Ollama/oMLX; how to move old models), #10 release notes' one-liner
+  passes `SLIPSTREAM_REPO=${{ github.repository }}`. Each starts with the same two CI commits
+  (whichever merges first brings them):
+  - `ci: green again`: upstream CI had failed on every push since ~1 Oct. 7 tests expected the
+    pre-rename names (`build/splash`, `libsplash.a`, `splash.metallib`, `splash-status-refresh`
+    thread, `Application Support/Splash`, `SPLASH_API_KEY`, "restart Splash"); 8 completion tests
+    still put models in the old per-installation folders (our model-store commit missed them);
+    `architecture-check` ran `.venv/bin/python`, which the production job never creates (now the
+    first of `PYTHON_CANDIDATES`); `check-source`'s whole-tree `git diff --check` found 6 spots.
+  - `style: ruff format and lint clean`: `check-python-engine` also runs `ruff check` + `ruff format
+    --check` (never reached before): 27 files reformatted, imports sorted, `# noqa: E402` after
+    `sys.path` changes, two unused variables removed.
+  - The PR commits were replayed onto the reformatted base (each commit's files, ruff-normalised,
+    same message) and checked by syntax tree against the originals.
+  - #10's build job once failed on the runner's DNS ("Could not resolve host: github.com"); only
+    upstream admins can re-run, so it was closed and reopened (user's OK) and passed.
 - Remotes of this repo: `github` (`mzinner/slipstream-menubar-item`) and `origin` (NAS,
   `ssh://192.168.10.245/volume1/Git/slipstream-menubar-item`). Push to both.
 
@@ -135,10 +164,11 @@ Part of the project context; see [the index](../PROJECT_CONTEXT.md).
   - `make check-source` fails on `main` over whitespace in `.agents/*`, `docs/research/…` and two
     `dev/tools` scripts, all older than this work.
 - **Low-disk preparation and `pull --check` (2026-10-03, fork v26.10.4, `main` up to `9ada146`):**
-  - Upstream-ready branches, pushed to `mzinner`, no PR yet, stacked:
-    `feat/slipstream-pull` → `feat/gguf-low-disk-prepare` (2 commits) → `feat/pull-check` (1).
-    Cherry-picked onto `main` (the fork's `main` holds its own linear copy of the stack, so a merge
-    would duplicate commits). The check test avoids depending on the fork-only Splash 1.0 refusal.
+  - Now PRs #7/#8 (see Related repos); the old stacked branches (`feat/gguf-hub-install`,
+    `feat/slipstream-pull`, `feat/gguf-low-disk-prepare`, `fix/converter-own-folder`,
+    `fix/v2-only-packages`, the #3–#5 branches) were deleted from `mzinner` and locally after
+    `git cherry`/`range-diff` showed nothing missing. Our launcher change dropped its own
+    prepared-folder condition in favour of upstream's equivalent `elif`.
   - Python tests: 93 in the touched suites; the full suite has 43 failures that exist without
     these changes too (engine-dependent).
   - Release notes in the fork's workflow now describe in-place preparation and `--check`.

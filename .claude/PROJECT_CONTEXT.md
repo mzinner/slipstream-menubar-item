@@ -64,7 +64,7 @@ MIT); latest release v26.10.5. One-line install:
 | File | What is in it |
 |---|---|
 | [context/architecture.md](context/architecture.md) | how the app works and why: targets, discovery, liveness, rates, history, installer, model manifest, setup wizard, model download, picker and checks, app self-update, uninstall, GPU limit, preparation progress |
-| [context/slipstream.md](context/slipstream.md) | what the app relies on from the Slipstream server (incl. in-place preparation, `pull --check`), measured numbers, the fork and its branches, the Hugging Face packages, related repos |
+| [context/slipstream.md](context/slipstream.md) | what the app relies on from the Slipstream server (incl. in-place preparation, `pull --check`), measured numbers, upstream's state, the open upstream PRs #7–#10 and the CI fix, the fork and its branches, the Hugging Face packages, related repos |
 | [context/development.md](context/development.md) | environment, testing recipes (setup preview, installer, Hub end to end), files that matter, release process (incl. replacing a release) |
 
 ## Current state
@@ -87,6 +87,13 @@ MIT); latest release v26.10.5. One-line install:
   packages as default, "Open Web UI after server startup", Stats panel after setup. Fork
   Slipstream v26.10.4: in-place preparation, `--keep-gguf`, `pull --check`. Ad-hoc signed, not
   notarized (`install.sh` clears the quarantine; a browser download needs *Open Anyway*).
+- **Upstream (npanj/slipstream):** has everything of the fork up to v26.10.3 (taken by
+  fast-forward) and published its own 26.10.4. PRs #7–#10 (in-place preparation, `pull --check`,
+  install/model-location docs, release one-liner) are open with green CI, no review yet; each
+  carries the two commits that fixed upstream's long-broken CI. The fork's `main` = upstream +
+  those PRs.
+- **App README** lists the Splash Q4 packages next to the GGUF models (pushed to `main`, not in a
+  release; README changes need none).
 - **Hugging Face:** `MikeZ75/Swift-Qwen3.8-Flash-Next-V3-Splash` and
   `MikeZ75/Qwen3.8-Flash-Next-V3-Splash` are public (see slipstream.md).
 - **This Mac:** Slipstream 26.10.3 in `~/.local` (26.10.2 kept); 26.10.4 not installed here. Both
@@ -111,21 +118,16 @@ MIT); latest release v26.10.5. One-line install:
 3. Decide whether the 400 cap on the readout stays (prompt rates reach ~450).
 4. Long-run (1 h) memory check with the panel open, to settle the earlier RSS creep for good.
 5. Notarization would need a paid Developer ID.
-6. Upstream PRs npanj/slipstream#3, #4 and #5 are open. When they merge, rebase the Slipstream fork
-   (git drops identical patches; squash-merged ones need `rebase -i`). Then remove the
-   `local/all-fixes` branch and the `fork` remote there.
+6. Upstream PRs npanj/slipstream#7–#10 are open (CI green). After they merge, reset the fork's
+   `main` to upstream's if they were squashed (else it already matches), delete the PR branches and
+   `fix/ci-green`; the `fork` remote (mariadb-MikeZinner, closed #3–#5 branches) can go too.
 7. The release workflow only runs on tags; a push/PR workflow running `swift test` would catch
    Swift 6.2 breakage earlier.
 8. A stable signing identity (self-signed certificate in the release workflow, or a Developer
    ID) would stop macOS asking for Keychain access after each update. Offered, not decided.
-9. Fork: `feat/gguf-hub-install` → `feat/slipstream-pull` → `feat/gguf-low-disk-prepare` →
-   `feat/pull-check` are upstream-ready (see slipstream.md); open them as PRs after #3/#4 merge.
-   Slipstream's README still says `hf download` + serve a folder (the author's text, left alone).
-10. Fork: the launcher now refuses the Splash 1.0 packages (minimal version, finished
-   2026-10-02): `923c9fa` on `main`, and the same change alone on `fix/v2-only-packages`
-   (`b2d9640`, on `upstream/main`) for a later PR. Pushed; released as fork v26.10.2. Left out on
-   purpose: `ci.yml`'s model list, `dev/native.mk` vision fixtures, tests that use the old names as
-   example ids, `DEVELOPMENT.md`, benchmarks.
+9. The fork's next release must be 26.10.5+ (upstream published its own 26.10.4).
+10. Fork/upstream: the Splash 1.0 refusal is upstream now. Left out on purpose then:
+   `ci.yml`'s model list, `dev/native.mk` vision fixtures, `DEVELOPMENT.md`, benchmarks.
 11. Suggested to the user: install the 26.10.3 dmg into /Applications (Open at login needs it,
    and updates then have a normal home).
 12. `target/draft-vocab.bin` is not produced by the GGUF path; the Hub packages carry the author's
@@ -188,14 +190,13 @@ MIT); latest release v26.10.5. One-line install:
 ```
 $ git status --short
  M .claude/PROJECT_CONTEXT.md
- M .claude/context/architecture.md
- M .claude/context/development.md
  M .claude/context/slipstream.md
 $ git branch --show-current
 main
 ```
 
 At checkpoint time: only this checkpoint's context edits are uncommitted; they are committed and
-pushed to both remotes right after. `main` (`18a6ab7` before the checkpoint), `feat/setup-wizard`
-(merged) and tags up to v26.10.5 are on both remotes. Slipstream fork: `main` (`9ada146`), tag
-v26.10.4, and the branches `feat/gguf-low-disk-prepare` and `feat/pull-check` are on `mzinner`.
+pushed to both remotes right after. App `main` (`5124c08` before the checkpoint) and tags up to
+v26.10.5 are on both remotes. Slipstream fork `mzinner/slipstream`: `main` = upstream `21d8956` +
+the PR commits; branches `feat/gguf-in-place`, `feat/pull-check`,
+`docs/install-and-model-locations`, `fix/release-install-repo`, `fix/ci-green`; tag v26.10.4.

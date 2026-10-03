@@ -751,15 +751,18 @@ final class CleanupTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: app.path), "it goes to the Trash through NSWorkspace")
     }
 
-    func testCollectionsAndOversizedRepositoriesAreRejected() {
+    func testCollectionsAreRejectedButNotLargeModels() {
         let collection = Data(#"[{"type":"file","path":"Q4_K_M/m-00001-of-00002.gguf","size":5},{"type":"file","path":"IQ2/m.gguf","size":5}]"#.utf8)
         if case .unsupported(let reason) = ModelCheck.layout(ofTree: collection).layout {
             XCTAssertTrue(reason.contains("sub-folders"))
         } else { XCTFail("a multi-variant collection must be rejected") }
         let huge = Data(#"[{"type":"file","path":"m.gguf","size":300000000000}]"#.utf8)
-        if case .unsupported(let reason) = ModelCheck.layout(ofTree: huge).layout {
-            XCTAssertTrue(reason.contains("300 GB"))
-        } else { XCTFail("a 300 GB repository must be rejected") }
+        XCTAssertEqual(ModelCheck.layout(ofTree: huge).layout, .gguf(firstShard: "m.gguf", hasMTP: false),
+                       "one 300 GB model is one model; a bigger Mac serves it")
+        let sideBySide = Data(#"[{"type":"file","path":"m.Q4_0.gguf","size":5},{"type":"file","path":"m.Q8_0.gguf","size":5}]"#.utf8)
+        if case .unsupported(let reason) = ModelCheck.layout(ofTree: sideBySide).layout {
+            XCTAssertTrue(reason.contains("not one model"))
+        } else { XCTFail("two quantisations side by side must be rejected") }
     }
 }
 

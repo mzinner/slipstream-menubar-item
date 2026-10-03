@@ -17,9 +17,15 @@ final class ModelPicker: ObservableObject {
     @Published var newRepository = ""
     @Published private(set) var newModelState: NewModelState = .idle
 
-    init(models: [ModelSpec], newModelOpen: Bool) {
+    /// Who checks a repository: this Slipstream when it has `pull --check`.
+    private let installation: SlipstreamInstallation?
+    private let searchPath: [String]
+
+    init(models: [ModelSpec], newModelOpen: Bool, installation: SlipstreamInstallation?, searchPath: [String]) {
         self.models = models
         self.newModelOpen = newModelOpen
+        self.installation = installation
+        self.searchPath = searchPath
     }
 
     func loadSizes() {
@@ -38,11 +44,54 @@ final class ModelPicker: ObservableObject {
             return
         }
         newModelState = .checking
-        Task { newModelState = await Self.check(repository) }
+        Task { newModelState = await Self.check(repository, installation: installation, searchPath: searchPath) }
     }
 
-    /// Also setup's "Model from Hugging Face".
-    static func check(_ repository: String) async -> NewModelState {
+    /// Also setup's "Model from Hugging Face". Slipstream decides when it can
+    /// (`pull --check`); an older one is checked here, against the Hub's API.
+    static func check(_ repository: String, installation: SlipstreamInstallation?,
+                      searchPath: [String]) async -> NewModelState {
+        if let installation, installation.supportsPullCheck,
+           let outcome = await slipstreamCheck(repository, installation: installation, searchPath: searchPath) {
+            switch outcome {
+            case .supported(let spec, let bytes): return .suitable(spec, size: bytes)
+            case .unsupported(let reason): return .unsuitable("\(repository) is not suitable: \(reason).")
+            }
+        }
+        return await hubCheck(repository)
+    }
+
+    /// `slipstream pull <repo> --check --json`; nil when it gave no verdict.
+    private nonisolated static func slipstreamCheck(_ repository: String, installation: SlipstreamInstallation,
+                                                    searchPath: [String]) async -> PullCheck.Outcome? {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let process = Process()
+                process.executableURL = installation.launcher
+                process.arguments = ["pull", repository, "--check", "--json"]
+                process.currentDirectoryURL = installation.root
+                var environment = ProcessInfo.processInfo.environment
+                environment["PATH"] = (["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"]
+                                       + searchPath).joined(separator: ":")
+                process.environment = environment
+                process.standardInput = FileHandle.nullDevice
+                process.standardError = FileHandle.nullDevice
+                let output = Pipe()
+                process.standardOutput = output
+                do {
+                    try process.run()
+                } catch {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                let data = output.fileHandleForReading.readDataToEndOfFile()
+                process.waitUntilExit()
+                continuation.resume(returning: PullCheck.outcome(fromOutput: data))
+            }
+        }
+    }
+
+    private static func hubCheck(_ repository: String) async -> NewModelState {
         guard let treeURL = URL(string: "https://huggingface.co/api/models/\(repository)/tree/main?recursive=true"),
               let (tree, response) = try? await URLSession.shared.data(from: treeURL) else {
             return .unsuitable("Hugging Face could not be reached.")

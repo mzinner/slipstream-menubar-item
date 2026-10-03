@@ -44,7 +44,8 @@ final class ModelWindowController: NSObject, NSWindowDelegate {
             present(downloader)
             return
         }
-        let picker = ModelPicker(models: models(), newModelOpen: newModel)
+        let picker = ModelPicker(models: models(), newModelOpen: newModel,
+                                 installation: installation(), searchPath: searchPath())
         self.picker = picker
         let view = ModelPickerView(picker: picker,
                                    choose: { [weak self] model in self?.begin(model) },

@@ -249,7 +249,8 @@ final class SetupCoordinator: ObservableObject {
         hubCheckNumber += 1
         let number = hubCheckNumber
         Task {
-            let result = await ModelPicker.check(repository)
+            let result = await ModelPicker.check(repository, installation: server.installation,
+                                                 searchPath: server.searchPath)
             // A newer check, or an edit since, wins.
             if number == hubCheckNumber { hubCheck = result }
         }

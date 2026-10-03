@@ -507,8 +507,9 @@ private struct HubModelDialog: View {
                     .textSelection(.enabled)
                     .padding(.leading, 12)
                 Text(verbatim: "Its page address works too, e.g. https://huggingface.co/nitinpanj/qwen38-flash-next-v3.")
-                Text("Slipstream runs Qwen3.8-Flash-Next models: a repository of its GGUF files, or a "
-                     + "ready-to-run Slipstream package. The repository must be public.")
+                Text("Slipstream runs Qwen3.8-Flash-Next models: one model's GGUF files, or a "
+                     + "ready-to-run Slipstream package. Slipstream checks the repository before anything "
+                     + "is downloaded.")
                     .foregroundStyle(.secondary)
             }
             .fixedSize(horizontal: false, vertical: true)

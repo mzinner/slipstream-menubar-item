@@ -177,3 +177,63 @@ final class HubModelIDTests: XCTestCase {
         }
     }
 }
+
+final class PullCheckTests: XCTestCase {
+    func testSlipstreamsVerdictBecomesTheModelToDownload() throws {
+        let output = Data("""
+            make: Nothing to be done for `install-environment'.
+            {"supported": true, "model": "nitinpanj/Swift-Qwen3.8-Flash-Next-Q4_0-Q8out-v3-GGUF", "revision": "6d6b", \
+            "kind": "gguf", "files": 3, "bytes": 104468009728, "mtp": "nitinpanj/qwen38-flash-next-v3"}
+
+            """.utf8)
+        guard case .supported(let spec, let bytes) = PullCheck.outcome(fromOutput: output) else {
+            return XCTFail("no verdict")
+        }
+        XCTAssertEqual(spec.repository, "nitinpanj/Swift-Qwen3.8-Flash-Next-Q4_0-Q8out-v3-GGUF")
+        XCTAssertEqual(spec.title, "Swift-Qwen3.8-Flash-Next-Q4_0-Q8out-v3-GGUF")
+        XCTAssertEqual(spec.kind, .gguf)
+        XCTAssertEqual(spec.extraFiles, [ModelSpec.mtpDraftHead], "the MTP head comes from the base model")
+        XCTAssertEqual(bytes, 104_468_009_728)
+
+        let own = Data(#"{"supported": true, "model": "a/b", "kind": "gguf", "bytes": 5, "mtp": "a/b"}"#.utf8)
+        guard case .supported(let base, _) = PullCheck.outcome(fromOutput: own) else { return XCTFail() }
+        XCTAssertEqual(base.extraFiles, [], "a repository with its own MTP head needs no other")
+
+        let package = Data(#"{"supported": true, "model": "a/b", "kind": "package", "bytes": 5}"#.utf8)
+        guard case .supported(let ready, _) = PullCheck.outcome(fromOutput: package) else { return XCTFail() }
+        XCTAssertEqual(ready.kind, .package)
+    }
+
+    func testARefusalCarriesSlipstreamsReason() {
+        let output = Data(#"{"supported": false, "model": "a/b", "reason": "repository holds 3 GGUF files"}"#.utf8)
+        XCTAssertEqual(PullCheck.outcome(fromOutput: output), .unsupported("repository holds 3 GGUF files"))
+    }
+
+    func testNoVerdictMeansTheAppChecksItself() {
+        XCTAssertNil(PullCheck.outcome(fromOutput: Data("usage: slipstream pull ...\n".utf8)))
+        XCTAssertNil(PullCheck.outcome(fromOutput: Data()))
+    }
+}
+
+final class OneGGUFModelTests: XCTestCase {
+    private func tree(_ files: [(String, Int64)]) -> Data {
+        try! JSONSerialization.data(withJSONObject: files.map { ["type": "file", "path": $0.0, "size": $0.1] })
+    }
+
+    func testOneModelOfAnySizeIsAccepted() {
+        // 300 GB of split files: a bigger Mac serves a bigger model; size is no criterion.
+        let split = tree([("M-00001-of-00002.gguf", 150_000_000_000), ("M-00002-of-00002.gguf", 150_000_000_000)])
+        XCTAssertEqual(ModelCheck.layout(ofTree: split).layout, .gguf(firstShard: "M-00001-of-00002.gguf", hasMTP: false))
+        XCTAssertEqual(ModelCheck.layout(ofTree: tree([("M.gguf", 1)])).layout, .gguf(firstShard: "M.gguf", hasMTP: false))
+    }
+
+    func testSeveralModelsSideBySideAreRefused() {
+        for files in [[("M.Q4_0.gguf", Int64(1)), ("M.Q8_0.gguf", 1)],
+                      [("A-00001-of-00001.gguf", 1), ("B-00001-of-00001.gguf", 1)],
+                      [("M-00001-of-00003.gguf", 1), ("M-00003-of-00003.gguf", 1)]] {
+            guard case .unsupported = ModelCheck.layout(ofTree: tree(files)).layout else {
+                return XCTFail("\(files) accepted")
+            }
+        }
+    }
+}

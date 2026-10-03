@@ -9,8 +9,6 @@ public enum ModelCheck {
     public static let packageFormats: [String: Int] = [
         "splash-packed-q4-qwen4exp": 5,
     ]
-    /// More than one model's worth: a Qwen3.8-Flash-Next download is about 105 GB.
-    public static let maximumSize: Int64 = 150_000_000_000
     /// The only GGUF architecture the converter turns into a package.
     public static let ggufArchitecture = "qwen4exp"
 
@@ -40,14 +38,31 @@ public enum ModelCheck {
             return (.unsupported("it keeps several GGUF variants in sub-folders; Slipstream needs one "
                                  + "Qwen3.8-Flash-Next model at the top level of the repository"), size)
         }
-        if size > maximumSize {
-            return (.unsupported(String(format: "it is %.0f GB; a Qwen3.8-Flash-Next model is about 105 GB",
-                                        Double(size) / 1e9)), size)
+        // One model: a single file, or one complete gguf-split set (<stem>-00001-of-0000N.gguf),
+        // as Slipstream's `pull` requires; never a size limit, which bigger Macs outgrow.
+        if shards.count > 1, let problem = splitProblem(shards) {
+            return (.unsupported(problem), size)
         }
         if let first = shards.first {
             return (.gguf(firstShard: first, hasMTP: paths.contains(ModelSpec.mtpDraftHead.path)), size)
         }
         return (.unsupported("it holds neither a Slipstream package (manifest.json) nor GGUF files"), size)
+    }
+
+    /// Nil when the files are one model's complete set of split files, else why not.
+    static func splitProblem(_ shards: [String]) -> String? {
+        let pattern = #/^(?<stem>.+)-(?<index>\d{5})-of-(?<count>\d{5})\.gguf$/#
+        let splits = shards.compactMap { try? pattern.wholeMatch(in: $0)?.output }
+        let sets = Set(splits.map { "\($0.stem)|\($0.count)" })
+        guard splits.count == shards.count, sets.count == 1, let count = Int(splits[0].count) else {
+            return "it holds \(shards.count) GGUF files that are not one model's split files "
+                + "(\(shards.prefix(3).joined(separator: ", "))\(shards.count > 3 ? ", …" : "")); "
+                + "Slipstream converts one model per repository"
+        }
+        guard splits.compactMap({ Int($0.index) }) == Array(1...count) else {
+            return "it is missing some of \(splits[0].stem)'s split GGUF files"
+        }
+        return nil
     }
 
     /// Nil when the manifest describes a package this launcher can serve, else why not.
@@ -170,5 +185,36 @@ public enum HubModelID {
         guard id.range(of: #"^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$"#,
                        options: .regularExpression) != nil else { return nil }
         return id
+    }
+}
+
+/// `slipstream pull <repo> --check --json`: Slipstream's own verdict on a repository, so the
+/// app need not know its formats.
+public enum PullCheck {
+    public enum Outcome: Equatable, Sendable {
+        case supported(ModelSpec, bytes: Int64)
+        case unsupported(String)
+    }
+
+    /// The outcome from the command's output: its last line that is a JSON object
+    /// (a checkout's launcher may print its environment setup first).
+    public static func outcome(fromOutput data: Data) -> Outcome? {
+        let lines = String(decoding: data, as: UTF8.self).split(whereSeparator: \.isNewline).reversed()
+        for line in lines {
+            guard let object = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+                  let supported = object["supported"] as? Bool else { continue }
+            guard supported else {
+                return .unsupported(object["reason"] as? String ?? "Slipstream cannot serve it")
+            }
+            guard let model = object["model"] as? String,
+                  let kind = (object["kind"] as? String).flatMap(ModelSpec.Kind.init(rawValue:)),
+                  let bytes = (object["bytes"] as? NSNumber)?.int64Value else { continue }
+            // The MTP head comes from the base model's repository when the model has none.
+            let mtp = object["mtp"] as? String
+            let extras = kind == .gguf && mtp != nil && mtp != model ? [ModelSpec.mtpDraftHead] : []
+            let title = model.split(separator: "/").last.map(String.init) ?? model
+            return .supported(ModelSpec(repository: model, title: title, extraFiles: extras, kind: kind), bytes: bytes)
+        }
+        return nil
     }
 }

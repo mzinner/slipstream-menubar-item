@@ -39,6 +39,13 @@ public struct SlipstreamInstallation: Equatable, Sendable {
         return source?.contains("\"pull\"") ?? false
     }
 
+    /// Whether its launcher has `pull --check`: Slipstream says itself whether it can serve a
+    /// repository. Older ones are checked by the app.
+    public var supportsPullCheck: Bool {
+        let source = try? String(contentsOf: root.appendingPathComponent("install/launcher.py"), encoding: .utf8)
+        return source?.contains("\"--check\"") ?? false
+    }
+
     /// Whether its launcher has `serve --keep-gguf`: such a Slipstream uses a downloaded GGUF
     /// model's files up while preparing it, unless told to keep them. Older ones always keep
     /// them, and preparing then needs the model's size again.

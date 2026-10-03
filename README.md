@@ -29,7 +29,7 @@ release; `sh install.sh --help` lists the options. On its first start the app se
 and a model.
 
 Or, from the [latest release](https://github.com/mzinner/slipstream-menubar-item/releases/latest), get
-either `Slipstream-Menubar.app.<version>.dmg` (open it and drag the app onto *Applications*) or
+either `Slipstream-Menubar.<version>.dmg` (open it and drag the app onto *Applications*) or
 `Slipstream-Menubar.app.<version>.zip` (unzip it and move *Slipstream Menubar.app* to
 /Applications). The app is signed ad hoc, not notarized, so allow it once in *System Settings →
 Privacy & Security → Open Anyway*, or run

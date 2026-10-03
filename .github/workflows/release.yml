@@ -1,7 +1,7 @@
 name: Release
 
 # Pushing a tag like v26.10.0 builds the app, tests it, and attaches
-# Slipstream-Menubar.app.<version>.dmg, Slipstream-Menubar.app.<version>.zip,
+# Slipstream-Menubar.<version>.dmg, Slipstream-Menubar.app.<version>.zip,
 # their SHA-256 sums and install.sh to a GitHub release for that tag. Running it by hand with a
 # tag rebuilds the files of that existing release from the tagged commit.
 on:
@@ -48,7 +48,7 @@ jobs:
         run: |
           APP="build/Slipstream Menubar.app"
           ZIP="Slipstream-Menubar.app.$VERSION.zip"
-          DMG="Slipstream-Menubar.app.$VERSION.dmg"
+          DMG="Slipstream-Menubar.$VERSION.dmg"
           ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
           # The disk image opens to the app next to an Applications shortcut to drag it onto.
           mkdir dmg
@@ -82,7 +82,7 @@ jobs:
             echo '```'
             echo
             echo "Or download one of"
-            echo "- \`Slipstream-Menubar.app.$VERSION.dmg\`: open it and drag *Slipstream Menubar* onto *Applications*, or"
+            echo "- \`Slipstream-Menubar.$VERSION.dmg\`: open it and drag *Slipstream Menubar* onto *Applications*, or"
             echo "- \`Slipstream-Menubar.app.$VERSION.zip\`: unzip it and move *Slipstream Menubar.app* to /Applications."
             echo
             echo "Already installed? The app offers the update itself (menu → Check for Updates…)."
@@ -105,7 +105,7 @@ jobs:
           tag_name: ${{ env.TAG }}
           name: Slipstream Menubar ${{ env.VERSION }}
           files: |
-            Slipstream-Menubar.app.${{ env.VERSION }}.dmg
+            Slipstream-Menubar.${{ env.VERSION }}.dmg
             Slipstream-Menubar.app.${{ env.VERSION }}.zip
             SHA256SUMS.${{ env.VERSION }}.txt
             install.sh

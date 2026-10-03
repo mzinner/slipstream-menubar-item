@@ -3,7 +3,7 @@
   "models": [
     {
       "id": "swift-v3",
-      "name": "Swift",
+      "name": "Swift-Qwen3.8-Flash-Next V3",
       "title": "Swift-Qwen3.8-Flash-Next V3",
       "repository": "nitinpanj/Swift-Qwen3.8-Flash-Next-Q4_0-Q8out-v3-GGUF",
       "kind": "gguf",
@@ -22,7 +22,7 @@
     },
     {
       "id": "qwen38-v3",
-      "name": "Qwen3.8-Flash-Next",
+      "name": "Qwen3.8-Flash-Next V3",
       "title": "Qwen3.8-Flash-Next V3",
       "repository": "nitinpanj/qwen38-flash-next-v3",
       "kind": "gguf",
@@ -33,7 +33,7 @@
     },
     {
       "id": "swift-v3-converted",
-      "name": "Swift (converted)",
+      "name": "Swift-Qwen3.8-Flash-Next V3",
       "title": "Swift-Qwen3.8-Flash-Next V3 (converted)",
       "kind": "package",
       "sizeBytes": 107189682176,

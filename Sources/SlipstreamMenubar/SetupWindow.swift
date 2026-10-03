@@ -346,13 +346,14 @@ private struct ModelStep: View {
             ScrollView {
                 VStack(spacing: 8) {
                     ForEach(setup.manifest.setupEntries) { entry in
-                        ModelChoiceRow(name: entry.name, detail: entry.detail(memoryGiB: MachineCheck.memoryGiB),
+                        ModelChoiceRow(name: entry.name, format: entry.kind,
+                                       detail: entry.detail(memoryGiB: MachineCheck.memoryGiB),
                                        badge: entry.badge, enabled: entry.isAvailable,
                                        selected: setup.selection == .entry(entry.id)) { setup.select(entry) }
                     }
-                    ModelChoiceRow(name: "Model from Hugging Face", detail: hubDetail, badge: nil, enabled: true,
+                    ModelChoiceRow(name: "Model from Hugging Face", format: hubFormat, detail: hubDetail, badge: nil, enabled: true,
                                    selected: isHub) { setup.openHubDialog() }
-                    ModelChoiceRow(name: "Other model", detail: otherDetail, badge: nil, enabled: true,
+                    ModelChoiceRow(name: "Other model", format: nil, detail: otherDetail, badge: nil, enabled: true,
                                    selected: isFolder) { setup.chooseFolder() }
                 }
                 .padding(1)  // the selected card's border is not clipped
@@ -376,6 +377,11 @@ private struct ModelStep: View {
         return false
     }
 
+    private var hubFormat: ModelSpec.Kind? {
+        if case .hub(let spec) = setup.selection { return spec.kind }
+        return nil
+    }
+
     private var hubDetail: String {
         if case .hub(let spec) = setup.selection { return spec.repository }
         return "Choose a model from Hugging Face"
@@ -389,6 +395,7 @@ private struct ModelStep: View {
 
 private struct ModelChoiceRow: View {
     let name: String
+    let format: ModelSpec.Kind?
     let detail: String
     let badge: String?
     let enabled: Bool
@@ -402,8 +409,20 @@ private struct ModelChoiceRow: View {
                     .font(.title3)
                     .foregroundStyle(selected ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(name).fontWeight(.semibold)
-                    Text(detail).font(.callout).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                    Text(name).fontWeight(.semibold).lineLimit(1)
+                    HStack(spacing: 6) {
+                        if let format {
+                            Text(format.formatLabel)
+                                .font(.caption2.weight(.medium))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1)
+                                .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(.secondary.opacity(0.6)))
+                                .help(format.formatDescription)
+                                .accessibilityLabel("Format: \(format.formatLabel)")
+                        }
+                        Text(detail).font(.callout).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                    }
                 }
                 Spacer(minLength: 8)
                 if let badge {

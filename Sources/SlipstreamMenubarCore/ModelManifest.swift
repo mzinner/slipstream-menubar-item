@@ -67,6 +67,9 @@ public struct ModelManifest: Codable, Equatable, Sendable {
             inSetup = try container.decodeIfPresent(Bool.self, forKey: .inSetup) ?? true
         }
 
+        /// The format tag setup shows next to the name.
+        public var formatLabel: String { kind.formatLabel }
+
         /// Selectable and downloadable.
         public var isAvailable: Bool { availability == .available && repository != nil }
 
@@ -121,14 +124,36 @@ public struct ModelManifest: Codable, Equatable, Sendable {
 
     /// Must match `Resources/models.json` (a test compares them).
     public static let builtIn = ModelManifest(models: [
-        Entry(id: "swift-v3", name: "Swift", title: "Swift-Qwen3.8-Flash-Next V3",
+        Entry(id: "swift-v3", name: "Swift-Qwen3.8-Flash-Next V3", title: "Swift-Qwen3.8-Flash-Next V3",
               repository: "nitinpanj/Swift-Qwen3.8-Flash-Next-Q4_0-Q8out-v3-GGUF",
               extraFiles: [ModelSpec.mtpDraftHead], sizeBytes: 104_468_009_728,
               badge: "Recommended", isDefault: true),
-        Entry(id: "qwen38-v3", name: "Qwen3.8-Flash-Next", title: "Qwen3.8-Flash-Next V3",
+        Entry(id: "qwen38-v3", name: "Qwen3.8-Flash-Next V3", title: "Qwen3.8-Flash-Next V3",
               repository: "nitinpanj/qwen38-flash-next-v3", sizeBytes: 104_475_874_048),
-        Entry(id: "swift-v3-converted", name: "Swift (converted)", title: "Swift-Qwen3.8-Flash-Next V3 (converted)",
+        Entry(id: "swift-v3-converted", name: "Swift-Qwen3.8-Flash-Next V3", title: "Swift-Qwen3.8-Flash-Next V3 (converted)",
               repository: nil, kind: .package, sizeBytes: 107_189_682_176, availability: .comingSoon,
               badge: "Soon"),
     ])
+}
+
+extension ModelSpec.Kind {
+    /// Short: "GGUF" (converted on the first start) or "Splash Q4" (ready to run).
+    public var formatLabel: String {
+        switch self {
+        case .gguf: return "GGUF"
+        case .package: return "Splash Q4"
+        }
+    }
+
+    /// What the tag means, for its tooltip.
+    public var formatDescription: String {
+        switch self {
+        case .gguf:
+            return "GGUF files: Slipstream converts them into its own format on the first start, "
+                + "which takes a few minutes."
+        case .package:
+            return "Splash Q4 (splash-packed-q4-qwen4exp): Slipstream's own format, ready to run "
+                + "without converting."
+        }
+    }
 }

@@ -60,17 +60,12 @@ jobs:
 
       - name: Release notes
         run: |
-          # "## Changes" lists the commits since the previous release tag; the app's
-          # update window shows that section.
+          # Install first, then "## Changes": the commits since the previous release tag.
+          # The app's update window shows that section, found by its heading.
           PREVIOUS=$(git describe --tags --abbrev=0 --match 'v[0-9]*' "$TAG^" 2>/dev/null || true)
           RANGE="${PREVIOUS:+$PREVIOUS..}$TAG"
           {
             echo "Menu bar item for a local [Slipstream](https://github.com/npanj/slipstream) server."
-            echo
-            echo "## Changes"
-            echo
-            # Commits that only touch the agent's notes are left out.
-            git log --no-merges --format='- %s' "$RANGE" -- . ':(exclude).claude'
             echo
             echo "## Install"
             echo
@@ -96,6 +91,11 @@ jobs:
             echo
             echo "Requires macOS 15 or later on Apple Silicon. The app installs Slipstream and a model for you."
             echo "Checksums: \`SHA256SUMS.$VERSION.txt\`."
+            echo
+            echo "## Changes"
+            echo
+            # Commits that only touch the agent's notes are left out.
+            git log --no-merges --format='- %s' "$RANGE" -- . ':(exclude).claude'
           } > NOTES.md
           cat NOTES.md
 

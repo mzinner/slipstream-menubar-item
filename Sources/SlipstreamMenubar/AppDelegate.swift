@@ -71,6 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             forceStop: { [weak self] in self?.server.forceStop(); self?.menu.update() },
             togglePanel: { [weak self] in self?.panel.toggle(); self?.menu.update() },
             install: { [weak self] in self?.installer.show() },
+            showError: { [weak self] message in self?.showError(message) },
             downloadModel: { [weak self] in self?.modelWindow.show() },
             isPanelVisible: { [weak self] in self?.panel.isVisible ?? false },
             settings: { [weak self] in self?.settings.show() },
@@ -367,5 +368,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.informativeText = message
         NSApp.activate(ignoringOtherApps: true)
         alert.runModal()
+    }
+
+    /// A failure's full message, wrapped and selectable: the menu shows only its first lines.
+    /// Long messages scroll instead of growing the alert past the screen.
+    private func showError(_ message: String) {
+        let width: CGFloat = 420
+        let text = NSTextView(frame: NSRect(x: 0, y: 0, width: width, height: 0))
+        text.string = MenuMessage.text(message)
+        text.font = .systemFont(ofSize: NSFont.systemFontSize)
+        text.isEditable = false
+        text.isSelectable = true
+        text.drawsBackground = false
+        text.textContainerInset = .zero
+        text.textContainer?.lineFragmentPadding = 0
+        text.textContainer?.widthTracksTextView = true
+        if let container = text.textContainer, let layout = text.layoutManager {
+            layout.ensureLayout(for: container)
+            text.frame.size.height = ceil(layout.usedRect(for: container).height)
+        }
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: width,
+                                                height: min(text.frame.height, 240)))
+        scroll.documentView = text
+        scroll.hasVerticalScroller = text.frame.height > scroll.frame.height
+        scroll.drawsBackground = false
+        scroll.borderType = .noBorder
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "The server failed"
+        alert.accessoryView = scroll
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Copy Message")
+        alert.addButton(withTitle: "Show Server Log")
+        NSApp.activate(ignoringOtherApps: true)
+        switch alert.runModal() {
+        case .alertSecondButtonReturn:
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text.string, forType: .string)
+        case .alertThirdButtonReturn:
+            NSWorkspace.shared.activateFileViewerSelecting([ServerController.logURL])
+        default:
+            break
+        }
     }
 }

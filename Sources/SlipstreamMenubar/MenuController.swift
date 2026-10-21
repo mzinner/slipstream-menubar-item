@@ -4,6 +4,8 @@ import SlipstreamMenubarCore
 /// The status item and its menu:
 ///
 ///   ● Status · model · :port     (not clickable)
+///   the failure, wrapped           (when it failed)
+///   Show Error…                    (when it failed)
 ///   Start Server / Stop Server / Force Stop
 ///   ─────
 ///   Stats Panel
@@ -23,6 +25,9 @@ final class MenuController: NSObject, NSMenuDelegate {
 
     private let headerItem = NSMenuItem()
     private let detailItem = NSMenuItem()
+    /// A failure, a few short lines: a menu item never wraps its title.
+    private let errorItems = (0..<3).map { _ in NSMenuItem() }
+    private var showErrorItem: NSMenuItem!
     private var startItem: NSMenuItem!
     private var installItem: NSMenuItem!
     private var downloadModelItem: NSMenuItem!
@@ -39,6 +44,8 @@ final class MenuController: NSObject, NSMenuDelegate {
         var togglePanel: () -> Void
         /// Opens the installer, offered when no Slipstream is installed.
         var install: () -> Void
+        /// Shows a failure's full message in a window.
+        var showError: (String) -> Void
         /// Opens the model download, offered when the configured model is missing.
         var downloadModel: () -> Void
         var isPanelVisible: () -> Bool
@@ -67,6 +74,11 @@ final class MenuController: NSObject, NSMenuDelegate {
         detailItem.isEnabled = false
         menu.addItem(headerItem)
         menu.addItem(detailItem)
+        for item in errorItems {
+            item.isEnabled = false
+            menu.addItem(item)
+        }
+        showErrorItem = add("Show Error…", #selector(showError))
         menu.addItem(.separator())
         startItem = add("Start Server", #selector(start))
         installItem = add("Install Slipstream…", #selector(install))
@@ -121,9 +133,20 @@ final class MenuController: NSObject, NSMenuDelegate {
             detail.append(ReleasePackages.isOlder(running, installed)
                           ? "restart to update to \(installed)" : "restart to switch to \(installed)")
         }
-        if case .failed(let message) = status { detail.append(message) }
         detailItem.title = detail.joined(separator: " · ")
         detailItem.isHidden = detail.isEmpty
+
+        var failure: [String] = []
+        if case .failed(let message) = status {
+            failure = MenuMessage.lines(message, maximumLines: errorItems.count).lines
+        }
+        for (index, item) in errorItems.enumerated() {
+            item.isHidden = index >= failure.count
+            item.attributedTitle = NSAttributedString(
+                string: index < failure.count ? failure[index] : "",
+                attributes: [.foregroundColor: NSColor.systemRed, .font: NSFont.menuFont(ofSize: 0)])
+        }
+        showErrorItem.isHidden = failure.isEmpty
 
         // Without an installation there is nothing to start: offer to install one.
         let installed = server.installation != nil
@@ -162,6 +185,9 @@ final class MenuController: NSObject, NSMenuDelegate {
         if let url = URL(string: "http://127.0.0.1:\(server.port)/") { NSWorkspace.shared.open(url) }
     }
     @objc private func install() { actions.install() }
+    @objc private func showError() {
+        if case .failed(let message) = server.status { actions.showError(message) }
+    }
     @objc private func downloadModel() { actions.downloadModel() }
     @objc private func settings() { actions.settings() }
     @objc private func about() { actions.about() }

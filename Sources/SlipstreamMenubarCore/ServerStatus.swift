@@ -152,6 +152,50 @@ public enum ServerStatus: Equatable, Sendable {
     }
 }
 
+/// A failure message for the menu. A menu item's title never wraps, so a long one (the
+/// engine's "expert cache needs … GiB" line is over 200 characters) stretched the menu
+/// across the screen. It is broken at spaces into a few short lines instead; when the rest
+/// is cut off, the last line ends in "…" and the full message is one click away.
+public enum MenuMessage {
+    /// The message without the launcher's "error: " prefix: the header already says Failed.
+    public static func text(_ message: String) -> String {
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.lowercased().hasPrefix("error:") else { return trimmed }
+        return String(trimmed.dropFirst("error:".count)).trimmingCharacters(in: .whitespaces)
+    }
+
+    /// At most `maximumLines` lines of at most `width` characters; a word longer than a
+    /// line is split. `truncated` says whether anything was left out.
+    public static func lines(_ message: String, width: Int = 50, maximumLines: Int = 3)
+        -> (lines: [String], truncated: Bool) {
+        var lines: [String] = []
+        var line = ""
+        for word in text(message).split(whereSeparator: \.isWhitespace) {
+            var word = Substring(word)
+            while !word.isEmpty {
+                if line.isEmpty, word.count > width {
+                    lines.append(String(word.prefix(width)))
+                    word = word.dropFirst(width)
+                } else if line.isEmpty {
+                    line = String(word)
+                    word = ""
+                } else if line.count + 1 + word.count <= width {
+                    line += " " + word
+                    word = ""
+                } else {
+                    lines.append(line)
+                    line = ""
+                }
+            }
+        }
+        if !line.isEmpty { lines.append(line) }
+        guard lines.count > maximumLines else { return (lines, false) }
+        var shown = Array(lines.prefix(maximumLines))
+        shown[maximumLines - 1] += "…"
+        return (shown, true)
+    }
+}
+
 /// Everything one status poll observed.
 public struct StatusObservation: Equatable, Sendable {
     public var processAlive: Bool

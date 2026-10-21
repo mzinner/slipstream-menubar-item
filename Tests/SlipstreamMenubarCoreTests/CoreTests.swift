@@ -84,6 +84,50 @@ final class LogProgressTests: XCTestCase {
     }
 }
 
+final class MenuMessageTests: XCTestCase {
+    /// The engine's message when the expert cache does not fit, as the launcher prints it.
+    let outOfMemory = "error: runtime bootstrap failed [resource_assembly]: expert cache needs 32.0 GiB "
+        + "plus 4.0 GiB kept free for macOS, but only 21.7 GiB is free. Is another model running? "
+        + "Otherwise lower SPLASH_EXPERT_CACHE_GIB."
+
+    func testDropsTheErrorPrefix() {
+        XCTAssertEqual(MenuMessage.text("error: preparing /m failed"), "preparing /m failed")
+        XCTAssertEqual(MenuMessage.text("Server exited with status 1"), "Server exited with status 1")
+    }
+
+    func testAShortMessageStaysOneLine() {
+        let wrapped = MenuMessage.lines("Server exited with status 1")
+        XCTAssertEqual(wrapped.lines, ["Server exited with status 1"])
+        XCTAssertFalse(wrapped.truncated)
+    }
+
+    func testALongMessageWrapsAtSpacesAndIsCut() {
+        let wrapped = MenuMessage.lines(outOfMemory)
+        XCTAssertEqual(wrapped.lines, [
+            "runtime bootstrap failed [resource_assembly]:",
+            "expert cache needs 32.0 GiB plus 4.0 GiB kept free",
+            "for macOS, but only 21.7 GiB is free. Is another…",
+        ])
+        XCTAssertTrue(wrapped.truncated)
+        XCTAssertTrue(wrapped.lines.allSatisfy { $0.count <= 51 })
+    }
+
+    func testAllLinesFitWhenThereIsRoom() {
+        let wrapped = MenuMessage.lines(outOfMemory, maximumLines: 10)
+        XCTAssertFalse(wrapped.truncated)
+        XCTAssertEqual(wrapped.lines.joined(separator: " "), MenuMessage.text(outOfMemory))
+        XCTAssertTrue(wrapped.lines.allSatisfy { $0.count <= 50 })
+    }
+
+    func testAWordLongerThanALineIsSplit() {
+        let path = "/Users/someone/.slipstream/models/nitinpanj/qwen38-flash-next-v3/prepared"
+        let wrapped = MenuMessage.lines("cannot open \(path)", width: 30, maximumLines: 5)
+        XCTAssertEqual(wrapped.lines.first, "cannot open")
+        XCTAssertTrue(wrapped.lines.allSatisfy { $0.count <= 30 })
+        XCTAssertEqual(wrapped.lines.dropFirst().joined(), path)
+    }
+}
+
 final class StatusResolverTests: XCTestCase {
     func testNoProcessIsStoppedUnlessSomethingAnswersThePort() {
         XCTAssertEqual(StatusResolver.resolve(.init(processAlive: false, healthOK: false, readyOK: false)), .stopped)

@@ -30,6 +30,12 @@ Part of the project context; see [the index](../PROJECT_CONTEXT.md).
   header read); packages go through `validate_package_manifest`. Plain `pull` refuses the same
   before writing anything. Uses the bundled `huggingface_hub` 1.28 and its token. `pull` `exec`s the download: SIGINT exits 130 after files
   in transfer finish (21 s once) and the next pull resumes. Done downloads skip the network.
+- **26.10.5 (fork release, 2026-10-21):** nothing the app calls changed. What the app can notice:
+  the default expert cache is at most 32 GiB (was RAM − 28 GiB, 36 GiB on a 64 GB Mac), so the
+  engine pins ~4 GiB less than the ~37 GB measured below; `SPLASH_EXPERT_CACHE_GIB` overrides. The
+  server's I/O deadline now extends while the engine makes progress (default 30 s, was 5 s;
+  `SLIPSTREAM_IO_TIMEOUT`), so long prompts no longer fail mid-prefill. `serve --model <folder>`
+  takes a folder holding only `prepared/`. Decoding is faster (narrower MTP draft, fused kernels).
 - **Signals:** SIGTERM/SIGINT → graceful shutdown, logs `Stopping · releasing engine resources`,
   ~2 s. A model load takes ~11–15 s for a prepared package. GGUF preparation took 214 s with 5 workers.
 - **Endpoints:** `GET /` chat UI (off with `--no-webui`); `/health` is static 200 while HTTP is up;
@@ -65,14 +71,19 @@ Part of the project context; see [the index](../PROJECT_CONTEXT.md).
 
 ## Related repos
 
-- `~/git/slipstream`: Slipstream checkout. On `main`, which tracks the fork `mzinner/slipstream`:
-  **upstream `main` (`21d8956`) plus exactly the commits of the open PRs #7–#10** (10 commits,
-  `main` = `feat/pull-check` + #9 + #10). Branches: `feat/gguf-in-place` (#7),
+- `~/git/slipstream`: Slipstream checkout. On `main`, which tracks the fork `mzinner/slipstream`
+  and is tagged v26.10.5: the old upstream `main` (`21d8956`) plus the commits of #7–#10, then
+  upstream's `95b96d1` and `2c7ac4d` cherry-picked, a ruff format of the latter, and the
+  shader-validation test fix (#19, branch `fix/g12-shader-validation`). It no longer matches
+  upstream's `main`, which was reset (see below). The repo's `user.email` is `mike@zinner.org`
+  (the user's choice from 2026-10-21; earlier commits use the noreply address). Branches: `feat/gguf-in-place` (#7),
   `feat/pull-check` (#8), `docs/install-and-model-locations` (#9), `fix/release-install-repo`
   (#10), `fix/ci-green` (the two CI commits alone, pushed for reference). Remotes: `upstream`
   (npanj), `mzinner` (fork), `fork` (mariadb-MikeZinner: still holds the closed #3–#5 branches; not
-  logged in, left alone). Update with `git fetch upstream && git rebase upstream/main && git push
-  --force-with-lease mzinner main`. `make install-development` (done) adds the dev requirements
+  logged in, left alone). Since upstream's reset, take new upstream commits by cherry-pick; don't
+  rebase `main` onto `upstream/main` (that would replay #7, #8 and `21d8956` onto a base without
+  them). Pushing to the fork needs the `mzinner` account (`gh auth token -u mzinner`); the active
+  `gh` account is `mariadb-MikeZinner`. `make install-development` (done) adds the dev requirements
   (`openai`, `ruff`) the full test run and lint need.
 - **Upstream state (2026-10-03):** the maintainer took the fork's whole `main` as of v26.10.3
   (`18815d8`) by fast-forward, so the release workflow, `install.sh`, the model store, Hub-id
@@ -81,6 +92,15 @@ Part of the project context; see [the index](../PROJECT_CONTEXT.md).
   to `npanj/slipstream`, a launcher branch for a folder with only `prepared/`) and **published its
   own Slipstream 26.10.4** from that, which lacks in-place preparation and `--check`: the version
   clashes with our fork's 26.10.4, so the fork's next release is 26.10.5+.
+- **Upstream state (2026-10-21):** #7 and #8 were merged on 2026-10-03, then the maintainer reset
+  `main` to `11b6034` on 2026-10-11 (the week's work kept on `27b` and `main-backup-2026-10-11`),
+  which dropped them and the CI fixes; GitHub still shows them as merged. Raised as
+  npanj/slipstream#18. Upstream `main` is now `11b6034` + `95b96d1` (Qwen4Exp decode speed-ups,
+  32 GiB expert cache cap) + `2c7ac4d` (OpenCode `--standalone`, the wrapper follows symlinks).
+  The fork took those two by cherry-pick and released **Slipstream 26.10.5**; it keeps #7, #8 and
+  `21d8956`, which upstream dropped. Open from `mzinner`: #19, on macOS 27 shader validation
+  doubling threadgroup memory, which pushes the `kv2_g12` attention tile past 32 KB, so the Q8
+  attention test skips it under validation.
 - **Open PRs from `mzinner` (all CI green):** #7 in-place preparation (+ README disk/first-start),
   #8 `pull --check` (+ README, release notes; contains #7), #9 docs: where Slipstream installs and
   keeps models and why (`~/.local` like Claude Code/pipx/uv, installer modelled on MariaDB Shell's;

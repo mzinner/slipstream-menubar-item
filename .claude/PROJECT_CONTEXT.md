@@ -85,13 +85,15 @@ MIT); latest release v26.10.5. One-line install:
 - **Released:** app v26.10.0 … v26.10.5. 26.10.4: setup wizard, in-place preparation setting,
   `install.sh`. 26.10.5 (replaced in place three times; current files from `18a6ab7`): Splash Q4
   packages as default, "Open Web UI after server startup", Stats panel after setup. Fork
-  Slipstream v26.10.4: in-place preparation, `--keep-gguf`, `pull --check`. Ad-hoc signed, not
+  Slipstream v26.10.4: in-place preparation, `--keep-gguf`, `pull --check`; v26.10.5
+  (2026-10-21): upstream's Qwen4Exp decode speed-ups and 32 GiB expert cache cap, nothing the app
+  calls changed (see slipstream.md). The app installs the fork's latest release, so it picks up
+  26.10.5 with no app change. Ad-hoc signed, not
   notarized (`install.sh` clears the quarantine; a browser download needs *Open Anyway*).
-- **Upstream (npanj/slipstream):** has everything of the fork up to v26.10.3 (taken by
-  fast-forward) and published its own 26.10.4. PRs #7–#10 (in-place preparation, `pull --check`,
-  install/model-location docs, release one-liner) are open with green CI, no review yet; each
-  carries the two commits that fixed upstream's long-broken CI. The fork's `main` = upstream +
-  those PRs.
+- **Upstream (npanj/slipstream):** merged #7 and #8 on 2026-10-03, then reset `main` on 2026-10-11,
+  which dropped them and the CI fixes (raised as npanj/slipstream#18); #9 and #10 are closed. The
+  fork's `main` = its earlier `main` + upstream's two new commits + the shader-validation test fix
+  (npanj/slipstream#19, open).
 - **App README** lists the Splash Q4 packages next to the GGUF models (pushed to `main`, not in a
   release; README changes need none).
 - **Hugging Face:** `MikeZ75/Swift-Qwen3.8-Flash-Next-V3-Splash` and
@@ -125,7 +127,8 @@ MIT); latest release v26.10.5. One-line install:
    Swift 6.2 breakage earlier.
 8. A stable signing identity (self-signed certificate in the release workflow, or a Developer
    ID) would stop macOS asking for Keychain access after each update. Offered, not decided.
-9. The fork's next release must be 26.10.5+ (upstream published its own 26.10.4).
+9. Wait for npanj/slipstream#18: re-submit #7 and #8 onto upstream's new `main`, or let the
+   maintainer bring them back from `main-backup-2026-10-11`.
 10. Fork/upstream: the Splash 1.0 refusal is upstream now. Left out on purpose then:
    `ci.yml`'s model list, `dev/native.mk` vision fixtures, `DEVELOPMENT.md`, benchmarks.
 11. Suggested to the user: install the 26.10.3 dmg into /Applications (Open at login needs it,
@@ -134,7 +137,7 @@ MIT); latest release v26.10.5. One-line install:
    copy. The converter could write one (`models/qwen4exp/tools/draft_vocab.py`).
 13. The menu's Download Model… window still has its own "New Model…" section; offered to switch it
    to the shared Hugging Face dialog, not decided.
-14. Installing Slipstream 26.10.4 on this Mac: the next serve of each prepared GGUF model deletes
+14. Installing Slipstream 26.10.4 or later on this Mac: the next serve of each prepared GGUF model deletes
    its shards (~191 GB) unless "Keep GGUF files" is on; tell the user first.
 15. Maybe tell nitinpanj about the published Splash Q4 packages (their own Swift upload is
    unfinished).

@@ -117,6 +117,8 @@ Part of the project context; see [the index](../PROJECT_CONTEXT.md).
   Core `SetupProgress.swift`, `ModelCheck.swift` (`HubModelID`, `PullCheck`, one-model rule).
 - `scripts/stage-hub-package.py`: stage a prepared model for a Hugging Face upload (see slipstream.md).
 - `.claude/commands/checkpoint.md`: the `/checkpoint` command that maintains this file (committed).
+- `.claude/commands/read-checkpoint.md`: `/read-checkpoint`, which reads the context back and reports
+  the open PRs and dangling branches live (both remotes; fast-forward merges).
 - `Sources/SlipstreamMenubarCore/Installation.swift`: `SlipstreamInstallation`, `InstallationLocator`
   (find, `serveLocks`, `loginShellPath`), `ReleasePackages` (select, version, superseded).
 - `Sources/SlipstreamMenubarCore/AppUpdate.swift`: `AppRelease` (GitHub JSON, `## Changes`),

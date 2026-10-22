@@ -4,14 +4,19 @@ Part of the project context; see [the index](../PROJECT_CONTEXT.md).
 
 ## Environment
 
-- **Machine:** Apple M5 Pro (20 GPU cores), 64 GB, macOS 26.6.2. Display 1920×1080 pt (4K panel);
+- **Machine:** Apple M5 Pro (20 GPU cores), 64 GB, macOS 27. Display 1920×1080 pt (4K panel);
   the panel's usable screen height is 1050 pt.
 - **Toolchain:** Xcode 27 / Swift 6.4 locally. **CI builds with Swift 6.2.4** (GitHub `macos-15` +
   `setup-xcode latest-stable`), so the code must keep compiling there. The deployment target is
   macOS 15 (the Slipstream engine itself needs 26.4).
 - **Accounts:** Hugging Face `hf` is logged in as `MikeZ75` (owner of the two Splash Q4 model
-  repositories). `gh` is logged into the private account `mzinner` (it was `mariadb-MikeZinner`
-  earlier; the upstream PRs #3–#5 were opened from that one). The NAS git server is
+  repositories). `gh` holds two accounts: `mariadb-MikeZinner` (the active one; #3–#5 came from it)
+  and the private `mzinner`, which owns the fork and this repo. A plain `git push` to GitHub
+  authenticates as the active account and gets a 403, so push with `mzinner`'s token for that one
+  command, without switching accounts: `T=$(gh auth token -u mzinner); git -c credential.helper=
+  -c credential.helper="!f() { echo username=mzinner; echo password=$T; }; f" push …`, and
+  `GH_TOKEN=$T gh …` for `gh` (PRs, releases, runs). Commits use `mike@zinner.org` (the repo's
+  local `user.email`). The NAS git server is
   `ssh://192.168.10.245/volume1/Git/<name>`: bare repos, no `.git` suffix, `git init --bare -b main`.
 - **Models on this Mac:** in Slipstream's model store, `~/.slipstream/models/nitinpanj/`:
   `qwen38-flash-next-v3` (3 GGUF shards, `MTP/mtp-shared-Q4_K_M.gguf`, `prepared/`, ~200 GB) and
@@ -25,7 +30,7 @@ Part of the project context; see [the index](../PROJECT_CONTEXT.md).
 
 ## Testing recipes
 
-- **Unit tests:** `make test` (92 XCTest cases, including a real `/metrics` capture in
+- **Unit tests:** `make test` (XCTest, including a real `/metrics` capture in
   `Tests/.../Fixtures/metrics.txt`). `make app` builds `build/Slipstream Menubar.app`; `make run`
   opens it with `--show-panel`; `make install` copies it to /Applications (needed for Open at login).
 - **Visual checks:**
@@ -67,13 +72,24 @@ Part of the project context; see [the index](../PROJECT_CONTEXT.md).
   the panel open and closed. Don't rebuild during it.
 - **Start/Stop:** ask the user to click (see Gotchas), and watch `serve.lock`, `/ready` and the log
   with a 1 s loop.
+- **A failed start, without a real server:** a fake checkout folder with an executable `slipstream`
+  that prints an `error: …` line to stderr and exits 1, an `install/launcher.py` containing
+  `"pull"` (so it counts as a checkout), and a model folder with `prepared/manifest.json`. Point a
+  `SLIPSTREAM_MENUBAR_CONFIG` at it (`useCheckout`, `repoPath`, `model`, another `port`,
+  `"raiseGPULimit": false`), with `SLIPSTREAM_MENUBAR_LOG=<scratch>/server.log`.
+- **Menu layout:** no dev aid opens the menu, and System Events can't click it. A temporary launch
+  hook (removed before committing) can call `start()`, then after a few seconds `menu.update()` and
+  print `NSMenu.size.width` and the visible items' titles; `NSApp.modalWindow?.frame` from a
+  `Timer` added to the run loop's `.common` mode measures an alert, and `NSApp.abortModal()` ends
+  it. A one-item `NSMenu` with a given title measures what a row of that text would cost.
 - **Restarting the user's server outside the app:** detach it fully, with a Python
   `fork()`/`setsid()`/`execv("./slipstream", […])`, output to `~/Library/Logs/Slipstream/server.log`.
 
 ## Files that matter
 
 - `Sources/SlipstreamMenubarCore/ServerStatus.swift`: `ServeLock`, process inspector, `LogProgress`
-  (53 GGUF preparation parts), `ServerStatus`, `StatusResolver`.
+  (53 GGUF preparation parts), `ServerStatus`, `MenuMessage` (a failure wrapped for the menu),
+  `StatusResolver`.
 - `Sources/SlipstreamMenubarCore/EngineSample.swift`: `/metrics` → `EngineSample`, `EngineRates`,
   `TimeSeries` (window, segments), `DataGap`.
 - `Sources/SlipstreamMenubarCore/ServerConfig.swift`: config, serve arguments, validation,
@@ -132,7 +148,9 @@ Part of the project context; see [the index](../PROJECT_CONTEXT.md).
 1. Commit and push `main` to both remotes.
 2. `git tag -a vYY.MM.N -m "Slipstream Menubar YY.MM.N"`, then `git push github vYY.MM.N` (and
    `origin`).
-3. The workflow (~1–3 min, macOS arm64 runners can queue) tests, builds, and publishes the dmg,
+3. The workflow (~1–3 min, macOS arm64 runners can queue; a job that no runner picks up within
+   15 min is cancelled as "not acquired by Runner of type hosted", with nothing published, and
+   `gh run rerun <id>` starts it again from the same tag) tests, builds, and publishes the dmg,
    the zip, `SHA256SUMS.<ver>.txt` and `install.sh`. The notes (`NOTES.md`, `body_path`) have
    `## Install`, then `## Changes`: `git log` since the previous `v*` tag, without `.claude`-only
    commits; the update window finds that list by its heading, so commit subjects are user-facing. Watch it with
@@ -151,4 +169,6 @@ Part of the project context; see [the index](../PROJECT_CONTEXT.md).
 4. Verify with `gh release download`, `shasum -a 256 -c`, the `Info.plist` version, and
    `codesign --verify --deep --strict`.
 5. Fork releases (`mzinner/slipstream`) come first when the app needs them: tag `main` there; its
-   workflow builds the package on `macos-26` in ~3 min.
+   workflow builds the package on `macos-26` in ~3 min (the same runner queue applies). The app
+   installs whatever `releases/latest` of the fork is, so a fork release needs no app release unless
+   the app must use something new in it.

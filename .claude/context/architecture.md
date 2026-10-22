@@ -33,6 +33,14 @@ Part of the project context; see [the index](../PROJECT_CONTEXT.md).
   style of Vorssaint's network indicator: **↓ prompt tok/s (incoming) over ↑ output tok/s
   (outgoing)**. Whole numbers only, capped at 400, fixed width ("↑400"). Template image.
   `StatusItemImage.reviewValue` (nil) forces a value for layout review.
+- **A failure in the menu:** `ServerStatus.failed` carries the log's last `error:`/`[ERROR]` line
+  (`LogProgress.lastError`), or the exit status when there is none. A menu item never wraps its
+  title, and the engine's out-of-memory line (~210 characters) on one row makes the menu ~1,385 pt
+  wide. So `MenuMessage.lines` breaks it at spaces into at most three 50-character rows, without
+  the `error: ` prefix, the last ending in "…" when cut; they sit in red below the header (the
+  detail row keeps model and port), and the menu stays ~390 pt wide. **Show Error…** below them
+  opens an `NSAlert` with the whole message in a selectable `NSTextView` accessory (420 pt wide,
+  scrolling past 240 pt), with Copy Message and Show Server Log (Finder, `server.log`).
 - **Settings:** JSON at `~/Library/Application Support/Slipstream/menubar.json`, decoded with
   defaults for missing keys. The API key is in the Keychain and passed via `SLIPSTREAM_V2_API_KEY`.
   "Listen on the network" adds `--host 0.0.0.0`, and is validated against the checkout's launcher

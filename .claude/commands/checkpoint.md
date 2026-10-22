@@ -57,5 +57,12 @@ Dead ends already tried and why they failed.
 ## In every case
 
 - Keep it dense — favour bullet points over prose, and omit anything derivable by reading the code.
-- Run `git -C $1 status --short` and `git -C $1 branch --show-current`, and record the result under a "Git state" heading in the index — replacing the previous one, not appending a second.
+- **Write only what stays true.** The context is read by sessions weeks later, so it holds knowledge, not status:
+  - No PR or branch state: open, merged, in review, "assumes PR #N is merged", "waiting for X to land", review-thread status. That lives in GitHub and goes stale the day it changes. A PR number is fine as a permanent reference to where a change and its discussion live ("the review of #59 found …"), and so is a commit hash. Branch names are not: branches are deleted after the merge. Describe the feature or fix itself (by file, function or behaviour).
+  - No session history: no "added on <date>", "renamed on <date>", "fixed in round 2", "(was X)", test counts or "all passing on <date>". State the current design and behaviour in the present tense. Keep a date only when it is the fact itself (a deadline, the release a behaviour depends on).
+  - No version or state of the day ("the current version is …", "the local build is …"): name where to look instead (`gh release list`, `bld/bin/mariadb-shell --version`).
+  - No paths or details of one developer's machine (home directories, `~/Downloads`, local server installs, sandbox ports, VM addresses, personal config files). Use repository-relative paths; for something outside the repository, say what it is (for example "the `bin` directory of a MariaDB server"), not where it lives on one machine. Paths the product itself defines (`~/.mariadb-shell`, `~/.mylogin.cnf`) are fine.
+  - Next steps are work still to do, not PRs to review or merge.
+- **Updating means deleting too.** When this session made a fact false — something fixed, merged, removed, renamed, decided — delete or rewrite it where it stands; never append a correction or a history line next to it. Check the parts of the touched files that this session's work affects for such facts.
+- Do not record git status or the current branch in a "Git state" section or anywhere else: they change with every command.
 - Confirm back to the user every path you wrote to, and say which files you left untouched.

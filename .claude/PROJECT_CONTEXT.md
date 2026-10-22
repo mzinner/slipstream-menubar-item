@@ -9,7 +9,7 @@ About, Check for Updates, Quit. A first-run setup wizard installs Slipstream and
 starts the server; the app also installs Slipstream and models from the menu, and updates itself. A
 floating panel shows live serving charts (throughput, KV cache, requests, engine memory) and system
 charts (CPU, GPU, memory, swap). Published on GitHub as `mzinner/slipstream-menubar-item` (public,
-MIT); latest release v26.10.5. One-line install:
+MIT); releases: `gh release list -R mzinner/slipstream-menubar-item`. One-line install:
 `curl -fsSL https://github.com/mzinner/slipstream-menubar-item/raw/main/install.sh | sh`.
 
 ## User decisions (keep unless asked to change)
@@ -20,6 +20,8 @@ MIT); latest release v26.10.5. One-line install:
     against the numbers, right-aligned.
   - Integers only, 400 cap, column sized for "↑400". macOS still adds 8 pt per side (57 pt item for
     a 41 pt image).
+  - A failure shows as up to three wrapped red rows under the header, then **Show Error…**, a
+    window with the whole message; never one row as wide as the message.
 - **Panel:**
   - One floating window (not submenus) with serving and system cards, refreshing every 2 s.
   - Compact view is the default; the toggle sits left of Stop/Start.
@@ -44,8 +46,11 @@ MIT); latest release v26.10.5. One-line install:
   models are added with "Choose from disk…" / "Load from Hugging Face…".
 - **Releases:** a release nobody downloaded yet is replaced in place (move the tag) rather than
   bumped; the dmg is `Slipstream-Menubar.<v>.dmg`; notes show Install before Changes.
-- **Repo:** Swift; local NAS repo first, now public on GitHub (MIT) with the history credited to the
-  private account via noreply; releases versioned `vYY.MM.N` (v26.10.0 = October 2026).
+- **Repo:** Swift; local NAS repo first, now public on GitHub (MIT); commits and tags use
+  `mike@zinner.org` (the older history is credited to the private account via its noreply address);
+  releases versioned `vYY.MM.N` (v26.10.0 = October 2026). Changes go through a PR, merged by
+  fast-forwarding `main` to its branch (linear history, the commit kept as it is) and pushing both
+  remotes; the branch is then deleted locally and on both remotes.
 
 ## Layout
 
@@ -64,7 +69,7 @@ MIT); latest release v26.10.5. One-line install:
 | File | What is in it |
 |---|---|
 | [context/architecture.md](context/architecture.md) | how the app works and why: targets, discovery, liveness, rates, history, installer, model manifest, setup wizard, model download, picker and checks, app self-update, uninstall, GPU limit, preparation progress |
-| [context/slipstream.md](context/slipstream.md) | what the app relies on from the Slipstream server (incl. in-place preparation, `pull --check`), measured numbers, upstream's state, the open upstream PRs #7–#10 and the CI fix, the fork and its branches, the Hugging Face packages, related repos |
+| [context/slipstream.md](context/slipstream.md) | what the app relies on from the Slipstream server (incl. in-place preparation, `pull --check`, memory and timeouts, the out-of-memory error), measured numbers, upstream's state and its reset of `main`, PRs #7–#10 and the CI fix, macOS 27 shader validation, the fork, the Hugging Face packages, related repos |
 | [context/development.md](context/development.md) | environment, testing recipes (setup preview, installer, Hub end to end), files that matter, release process (incl. replacing a release) |
 
 ## Current state
@@ -81,33 +86,25 @@ MIT); latest release v26.10.5. One-line install:
   - `install.sh` from the published release into a scratch folder (checksum, no quarantine left).
   - Converter in place on a clone of the Swift GGUF: peak 102.6 GiB, byte-identical output.
   - The Swift Splash Q4 package downloaded from the Hub, `verify --full`, served correctly.
-  - 92 unit tests, plus the release workflow.
-- **Released:** app v26.10.0 … v26.10.5. 26.10.4: setup wizard, in-place preparation setting,
-  `install.sh`. 26.10.5 (replaced in place three times; current files from `18a6ab7`): Splash Q4
-  packages as default, "Open Web UI after server startup", Stats panel after setup. Fork
-  Slipstream v26.10.4: in-place preparation, `--keep-gguf`, `pull --check`; v26.10.5
-  (2026-10-21): upstream's Qwen4Exp decode speed-ups and 32 GiB expert cache cap, nothing the app
-  calls changed (see slipstream.md). The app installs the fork's latest release, so it picks up
-  26.10.5 with no app change. Ad-hoc signed, not
-  notarized (`install.sh` clears the quarantine; a browser download needs *Open Anyway*).
-- **Upstream (npanj/slipstream):** merged #7 and #8 on 2026-10-03, then reset `main` on 2026-10-11,
-  which dropped them and the CI fixes (raised as npanj/slipstream#18); #9 and #10 are closed. The
-  fork's `main` = its earlier `main` + upstream's two new commits + the shader-validation test fix
-  (npanj/slipstream#19, open).
-- **App README** lists the Splash Q4 packages next to the GGUF models (pushed to `main`, not in a
-  release; README changes need none).
+  - A failed start: the wrapped failure rows and Show Error…, measured with a stand-in launcher
+    (menu 390 pt wide with the out-of-memory message; see development.md).
+  - Unit tests, plus the release workflow.
+- **Releases:** `gh release list -R mzinner/slipstream-menubar-item` for the app,
+  `-R mzinner/slipstream` for the fork's Slipstream. The app installs the fork's latest release, so
+  a fork release needs no app release. Ad-hoc signed, not notarized (`install.sh` clears the
+  quarantine; a browser download needs *Open Anyway*).
+- **Upstream (npanj/slipstream)** reset its `main` and so dropped the merged #7 and #8; the fork
+  keeps them (see slipstream.md).
 - **Hugging Face:** `MikeZ75/Swift-Qwen3.8-Flash-Next-V3-Splash` and
   `MikeZ75/Qwen3.8-Flash-Next-V3-Splash` are public (see slipstream.md).
 - **This Mac:** Slipstream 26.10.3 in `~/.local` (26.10.2 kept); 26.10.4 not installed here. Both
   Flash-Next GGUF models with their shards and `prepared/` in `~/.slipstream/models/nitinpanj/`; the
   settings serve `nitinpanj/qwen38-flash-next-v3`. No server running. `iogpu.wired_limit_mb` is
   59392.
-- **The user's copy** runs from `build/` (26.10.2 build); its update check offers 26.10.5. The user
-  ran the wizard on another Mac (found the focus-ring bug, fixed).
 - **Not verified by Claude:** clicking through setup for real (Install, a real download, Start,
   the browser opening, the Stats panel opening after setup), the focus-ring fix (needs keyboard
   focus), the base Splash Q4 package downloaded from the Hub, Open at login, a real full uninstall
-  (never run it on the user's Mac).
+  (never run it on the user's Mac), the failure rows and the Show Error… window by eye.
 - **Known:** the CI log warns that `actions/checkout@v4` and `softprops/action-gh-release@v2` target
   Node 20 (forced to Node 24). The model author's `nitinpanj/Swift-Qwen3.8-Flash-Next-Splash` is an
   unfinished upload of the same Swift package (layers 0–19).
@@ -120,15 +117,15 @@ MIT); latest release v26.10.5. One-line install:
 3. Decide whether the 400 cap on the readout stays (prompt rates reach ~450).
 4. Long-run (1 h) memory check with the panel open, to settle the earlier RSS creep for good.
 5. Notarization would need a paid Developer ID.
-6. Upstream PRs npanj/slipstream#7–#10 are open (CI green). After they merge, reset the fork's
-   `main` to upstream's if they were squashed (else it already matches), delete the PR branches and
-   `fix/ci-green`; the `fork` remote (mariadb-MikeZinner, closed #3–#5 branches) can go too.
+6. Settle npanj/slipstream#18 with the maintainer: re-submit #7 and #8 onto upstream's `main`, or
+   have them restored from `main-backup-2026-10-11`. Until then the fork's `main` takes upstream
+   commits by cherry-pick. The `fork` remote (mariadb-MikeZinner, closed #3–#5 branches) can go.
 7. The release workflow only runs on tags; a push/PR workflow running `swift test` would catch
    Swift 6.2 breakage earlier.
 8. A stable signing identity (self-signed certificate in the release workflow, or a Developer
    ID) would stop macOS asking for Keychain access after each update. Offered, not decided.
-9. Wait for npanj/slipstream#18: re-submit #7 and #8 onto upstream's new `main`, or let the
-   maintainer bring them back from `main-backup-2026-10-11`.
+9. Offer a Slipstream update in the app when the fork publishes a newer release: today it asks
+   only when a feature needs a newer one, so older installs are never told. Offered, not decided.
 10. Fork/upstream: the Splash 1.0 refusal is upstream now. Left out on purpose then:
    `ci.yml`'s model list, `dev/native.mk` vision fixtures, `DEVELOPMENT.md`, benchmarks.
 11. Suggested to the user: install the 26.10.3 dmg into /Applications (Open at login needs it,
@@ -141,14 +138,18 @@ MIT); latest release v26.10.5. One-line install:
    its shards (~191 GB) unless "Keep GGUF files" is on; tell the user first.
 15. Maybe tell nitinpanj about the published Splash Q4 packages (their own Swift upload is
    unfinished).
+16. Slipstream could check each pipeline's threadgroup memory against the device limit when
+   creating it, so a server under shader validation fails loudly instead of returning wrong
+   qwen4exp attention. Offered, not decided.
 
 ## Gotchas / things not to repeat
 
 - `ImageRenderer` renders a `ScrollView` blank: snapshot `StatsContent`, not `StatsView`. Buttons
   render as yellow 🚫 placeholders in snapshots.
 - System Events can't click menus (no Accessibility permission); ask the user to click.
-  `screencapture -x` works from the terminal now (2026-10-03); `-R x,y,w,h` takes points, not
-  pixels. `--snapshot` still renders the panel without screen access.
+  `screencapture -x` can return an all-black image and block for minutes (display locked or asleep,
+  or no screen recording permission): measure instead (development.md, Menu layout). `-R x,y,w,h`
+  takes points, not pixels. `--snapshot` still renders the panel without screen access.
 - Rebuilding/relaunching kills background memory measurements, because they key on the app process.
 - `CFFIXED_USER_HOME` does not redirect the config; use `SLIPSTREAM_MENUBAR_CONFIG`. A test
   instance pointed at the real checkout follows its `serve.lock` to the real server: give fakes
@@ -158,8 +159,11 @@ MIT); latest release v26.10.5. One-line install:
 - Swift memberwise init takes arguments in declaration order (`gaps` must come before `series` in
   `SeriesChart`).
 - `sips --cropOffset` crops from the middle, not the top.
-- Commits must use the GitHub noreply address `37372663+mzinner@users.noreply.github.com` (set in
-  the repo's local git config), never the work email.
+- Commits and tags use `mike@zinner.org` (the repo's local git config), never the work email.
+- macOS has no `timeout`: run the process in the background and kill it by pid after a deadline.
+- `strings` doesn't show Swift string literals of 15 UTF-8 bytes or fewer (they are stored inline
+  in the code); check a binary for a longer one.
+- `swift build -c release` from scratch takes ~16 min here; `make app` reuses that build.
 - **The agent's background tasks are killed after 2 hours**, and a server started inside one dies
   with it (it happened at 19:03). Detach long-lived processes (see Testing recipes).
 - SwiftUI `Text("\(int)")` uses locale grouping (German: `8.090`); use `Text(verbatim:)` for ports,
@@ -187,19 +191,3 @@ MIT); latest release v26.10.5. One-line install:
 - `hf upload-large-folder` (deprecated for `hf upload`, still works) prints status every minute;
   Xet dedups against data already on the Hub. Detach long uploads (2-hour task limit).
 - Moving a release tag: GitHub serves the old assets for a minute or two afterwards.
-
-## Git state
-
-```
-$ git status --short
- M .claude/PROJECT_CONTEXT.md
- M .claude/context/slipstream.md
-$ git branch --show-current
-main
-```
-
-At checkpoint time: only this checkpoint's context edits are uncommitted; they are committed and
-pushed to both remotes right after. App `main` (`5124c08` before the checkpoint) and tags up to
-v26.10.5 are on both remotes. Slipstream fork `mzinner/slipstream`: `main` = upstream `21d8956` +
-the PR commits; branches `feat/gguf-in-place`, `feat/pull-check`,
-`docs/install-and-model-locations`, `fix/release-install-repo`, `fix/ci-green`; tag v26.10.4.

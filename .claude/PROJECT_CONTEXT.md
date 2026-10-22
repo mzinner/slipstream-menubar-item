@@ -47,7 +47,8 @@ MIT); releases: `gh release list -R mzinner/slipstream-menubar-item`. One-line i
 - **Releases:** a release nobody downloaded yet is replaced in place (move the tag) rather than
   bumped; the dmg is `Slipstream-Menubar.<v>.dmg`; notes show Install before Changes.
 - **Repo:** Swift; local NAS repo first, now public on GitHub (MIT); commits and tags use
-  `mike@zinner.org` (the older history is credited to the private account via its noreply address);
+  the private address set in the repo's local git config (the older history is credited via the
+  account's noreply address);
   releases versioned `vYY.MM.N` (v26.10.0 = October 2026). Changes go through a PR, merged by
   fast-forwarding `main` to its branch (linear history, the commit kept as it is) and pushing both
   remotes; the branch is then deleted locally and on both remotes.
@@ -70,7 +71,7 @@ MIT); releases: `gh release list -R mzinner/slipstream-menubar-item`. One-line i
 |---|---|
 | [context/architecture.md](context/architecture.md) | how the app works and why: targets, discovery, liveness, rates, history, installer, model manifest, setup wizard, model download, picker and checks, app self-update, uninstall, GPU limit, preparation progress |
 | [context/slipstream.md](context/slipstream.md) | what the app relies on from the Slipstream server (incl. in-place preparation, `pull --check`, memory and timeouts, the out-of-memory error), measured numbers, upstream's state and its reset of `main`, PRs #7–#10 and the CI fix, macOS 27 shader validation, the fork, the Hugging Face packages, related repos |
-| [context/development.md](context/development.md) | environment, testing recipes (setup preview, installer, Hub end to end), files that matter, release process (incl. replacing a release) |
+| [context/development.md](context/development.md) | environment, testing recipes (setup preview, installer, Hub end to end), files that matter, release process (incl. replacing a release), signing and notarization |
 
 ## Current state
 
@@ -116,29 +117,33 @@ MIT); releases: `gh release list -R mzinner/slipstream-menubar-item`. One-line i
    `statusItem.length`. Offered, not decided.
 3. Decide whether the 400 cap on the readout stays (prompt rates reach ~450).
 4. Long-run (1 h) memory check with the panel open, to settle the earlier RSS creep for good.
-5. Notarization would need a paid Developer ID.
+5. Sign releases with the Developer ID and notarize them (development.md, Signing and
+   notarization): it removes *Open Anyway* and `install.sh`'s quarantine clearing, and a stable
+   identity stops macOS asking for Keychain access after each update. Notarization needs the
+   membership fully provisioned first (notarytool answers 403 until then). Steps: store the notary
+   credentials, sign, notarize and staple one local build and check it with `spctl`, then export the
+   certificate as `.p12`, load the GitHub secrets, and change the release workflow, `install.sh`
+   and the release notes.
 6. Settle npanj/slipstream#18 with the maintainer: re-submit #7 and #8 onto upstream's `main`, or
    have them restored from `main-backup-2026-10-11`. Until then the fork's `main` takes upstream
-   commits by cherry-pick. The `fork` remote (mariadb-MikeZinner, closed #3–#5 branches) can go.
+   commits by cherry-pick. The `fork` remote (the work account, closed #3–#5 branches) can go.
 7. The release workflow only runs on tags; a push/PR workflow running `swift test` would catch
    Swift 6.2 breakage earlier.
-8. A stable signing identity (self-signed certificate in the release workflow, or a Developer
-   ID) would stop macOS asking for Keychain access after each update. Offered, not decided.
-9. Offer a Slipstream update in the app when the fork publishes a newer release: today it asks
+8. Offer a Slipstream update in the app when the fork publishes a newer release: today it asks
    only when a feature needs a newer one, so older installs are never told. Offered, not decided.
-10. Fork/upstream: the Splash 1.0 refusal is upstream now. Left out on purpose then:
+9. Fork/upstream: the Splash 1.0 refusal is upstream now. Left out on purpose then:
    `ci.yml`'s model list, `dev/native.mk` vision fixtures, `DEVELOPMENT.md`, benchmarks.
-11. Suggested to the user: install the 26.10.3 dmg into /Applications (Open at login needs it,
+10. Suggested to the user: install the 26.10.3 dmg into /Applications (Open at login needs it,
    and updates then have a normal home).
-12. `target/draft-vocab.bin` is not produced by the GGUF path; the Hub packages carry the author's
+11. `target/draft-vocab.bin` is not produced by the GGUF path; the Hub packages carry the author's
    copy. The converter could write one (`models/qwen4exp/tools/draft_vocab.py`).
-13. The menu's Download Model… window still has its own "New Model…" section; offered to switch it
+12. The menu's Download Model… window still has its own "New Model…" section; offered to switch it
    to the shared Hugging Face dialog, not decided.
-14. Installing Slipstream 26.10.4 or later on this Mac: the next serve of each prepared GGUF model deletes
+13. Installing Slipstream 26.10.4 or later on this Mac: the next serve of each prepared GGUF model deletes
    its shards (~191 GB) unless "Keep GGUF files" is on; tell the user first.
-15. Maybe tell nitinpanj about the published Splash Q4 packages (their own Swift upload is
+14. Maybe tell nitinpanj about the published Splash Q4 packages (their own Swift upload is
    unfinished).
-16. Slipstream could check each pipeline's threadgroup memory against the device limit when
+15. Slipstream could check each pipeline's threadgroup memory against the device limit when
    creating it, so a server under shader validation fails loudly instead of returning wrong
    qwen4exp attention. Offered, not decided.
 
@@ -159,7 +164,7 @@ MIT); releases: `gh release list -R mzinner/slipstream-menubar-item`. One-line i
 - Swift memberwise init takes arguments in declaration order (`gaps` must come before `series` in
   `SeriesChart`).
 - `sips --cropOffset` crops from the middle, not the top.
-- Commits and tags use `mike@zinner.org` (the repo's local git config), never the work email.
+- Commits and tags use the private address in the repo's local git config, never the work email.
 - macOS has no `timeout`: run the process in the background and kill it by pid after a deadline.
 - `strings` doesn't show Swift string literals of 15 UTF-8 bytes or fewer (they are stored inline
   in the code); check a binary for a longer one.
@@ -191,3 +196,6 @@ MIT); releases: `gh release list -R mzinner/slipstream-menubar-item`. One-line i
 - `hf upload-large-folder` (deprecated for `hf upload`, still works) prints status every minute;
   Xet dedups against data already on the Hub. Detach long uploads (2-hour task limit).
 - Moving a release tag: GitHub serves the old assets for a minute or two afterwards.
+- A new Apple Developer membership shows blank App Store Connect pages, and notarytool rejects the
+  Team ID with HTTP 403 ("Invalid or inaccessible developer team ID"), until Apple has provisioned
+  it (up to a day or two); a Developer ID certificate can already be created before that.

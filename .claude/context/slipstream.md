@@ -78,7 +78,7 @@ Part of the project context; see [the index](../PROJECT_CONTEXT.md).
   commits of #7–#10, and upstream's later commits cherry-picked on top. It does not match
   upstream's `main`, so take new upstream commits by cherry-pick; never rebase `main` onto
   `upstream/main` (that replays #7, #8 and `21d8956` onto a base without them). Remotes: `upstream`
-  (npanj), `mzinner` (the fork), `fork` (mariadb-MikeZinner, holding the closed #3–#5 branches).
+  (npanj), `mzinner` (the fork), `fork` (the work account, holding the closed #3–#5 branches).
   `make install-development` adds the dev requirements (`openai`, `ruff`) the full test run and
   lint need. Upstream PRs come from the `mzinner` fork.
 - **Upstream state (2026-10-03):** the maintainer took the fork's whole `main` as of v26.10.3
@@ -115,8 +115,8 @@ Part of the project context; see [the index](../PROJECT_CONTEXT.md).
     same message) and checked by syntax tree against the originals.
   - #10's build job once failed on the runner's DNS ("Could not resolve host: github.com"); only
     upstream admins can re-run, so it was closed and reopened (user's OK) and passed.
-- Remotes of this repo: `github` (`mzinner/slipstream-menubar-item`) and `origin` (NAS,
-  `ssh://192.168.10.245/volume1/Git/slipstream-menubar-item`). Push to both.
+- Remotes of this repo: `github` (`mzinner/slipstream-menubar-item`) and `origin` (the NAS git
+  server, over SSH). Push to both.
 
 ### Slipstream-side work from this session
 

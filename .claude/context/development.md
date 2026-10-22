@@ -10,14 +10,14 @@ Part of the project context; see [the index](../PROJECT_CONTEXT.md).
   `setup-xcode latest-stable`), so the code must keep compiling there. The deployment target is
   macOS 15 (the Slipstream engine itself needs 26.4).
 - **Accounts:** Hugging Face `hf` is logged in as `MikeZ75` (owner of the two Splash Q4 model
-  repositories). `gh` holds two accounts: `mariadb-MikeZinner` (the active one; #3–#5 came from it)
-  and the private `mzinner`, which owns the fork and this repo. A plain `git push` to GitHub
+  repositories). `gh` holds two accounts: a work account (the active one; #3–#5 came from it) and
+  the private `mzinner`, which owns the fork and this repo. A plain `git push` to GitHub
   authenticates as the active account and gets a 403, so push with `mzinner`'s token for that one
   command, without switching accounts: `T=$(gh auth token -u mzinner); git -c credential.helper=
   -c credential.helper="!f() { echo username=mzinner; echo password=$T; }; f" push …`, and
-  `GH_TOKEN=$T gh …` for `gh` (PRs, releases, runs). Commits use `mike@zinner.org` (the repo's
-  local `user.email`). The NAS git server is
-  `ssh://192.168.10.245/volume1/Git/<name>`: bare repos, no `.git` suffix, `git init --bare -b main`.
+  `GH_TOKEN=$T gh …` for `gh` (PRs, releases, runs). Commits use the private address in the repo's
+  local `user.email`. The NAS git server (the `origin` remote, over SSH) holds bare repos, no
+  `.git` suffix, `git init --bare -b main`.
 - **Models on this Mac:** in Slipstream's model store, `~/.slipstream/models/nitinpanj/`:
   `qwen38-flash-next-v3` (3 GGUF shards, `MTP/mtp-shared-Q4_K_M.gguf`, `prepared/`, ~200 GB) and
   `Swift-Qwen3.8-Flash-Next-Q4_0-Q8out-v3-GGUF` (the same layout, MTP head fetched by `pull`).
@@ -174,3 +174,30 @@ Part of the project context; see [the index](../PROJECT_CONTEXT.md).
    workflow builds the package on `macos-26` in ~3 min (the same runner queue applies). The app
    installs whatever `releases/latest` of the fork is, so a fork release needs no app release unless
    the app must use something new in it.
+
+## Signing and notarization
+
+- **Today:** `scripts/build-app.sh` signs ad hoc with the hardened runtime (`codesign --force
+  --sign - --options runtime`), no entitlements; `install.sh` clears the quarantine and the release
+  notes say the app is not notarized. The updater only checks `codesign --verify --deep --strict`.
+- **Developer ID:** a "Developer ID Application" certificate, created in Xcode → Settings →
+  Accounts → Manage Certificates and kept in the login keychain; `security find-identity -v -p
+  codesigning` shows its full name and the Team ID. A certificate issued under Apple's older
+  Developer ID CA expires with it, on 2027-02-01: apps signed and notarized before then keep
+  working, but new releases need a renewed certificate.
+- **Signing:** `codesign --force --options runtime --timestamp --sign "Developer ID Application:
+  <name> (<Team ID>)"`, then `xcrun notarytool submit <dmg or zip> --wait`, `xcrun stapler
+  staple`, and `spctl --assess --type execute -vv` (expect "source=Notarized Developer ID").
+- **Notary credentials:** either the Apple Account with an app-specific password (account.apple.com
+  → Sign-In and Security) and the Team ID, stored with `xcrun notarytool store-credentials
+  <profile> --apple-id <Apple Account> --team-id <Team ID>` (the user types the password) and used
+  as `--keychain-profile <profile>`; or an App Store Connect Team API key (Users and Access →
+  Integrations, which first needs a one-time Request Access): Key ID, Issuer ID and the `.p8`,
+  downloadable once.
+- **In the release workflow:** secrets `DEVELOPER_ID_P12` (the certificate exported from Keychain
+  Access as `.p12`, base64), `DEVELOPER_ID_P12_PASSWORD`, `APPLE_TEAM_ID`, and `NOTARY_APPLE_ID` +
+  `NOTARY_PASSWORD` or `NOTARY_KEY_ID` + `NOTARY_ISSUER_ID` + `NOTARY_KEY_P8`. None of them, nor
+  the Team ID or the certificate's name, belongs in the repository. Load them
+  with `gh secret set <NAME> -R mzinner/slipstream-menubar-item < <file>`, which uploads a file
+  without anyone reading it; the user types passwords into GitHub themselves. The runner imports the
+  `.p12` into a temporary keychain.

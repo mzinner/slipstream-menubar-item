@@ -34,6 +34,10 @@ final class StatsModel: ObservableObject {
 
     /// Stretches without engine metrics, drawn as shaded areas on the serving charts.
     @Published private(set) var gaps: [DataGap] = []
+    /// When a server replaced its engine, drawn as red lines on the serving charts.
+    @Published private(set) var engineRestarts: [Date] = []
+    /// The server process the last engine reading came from.
+    private var engineServer: Int32?
     /// Whether the last tick got metrics.
     private var receiving = false
     /// Increments at each gap, so chart lines are not drawn across it.
@@ -49,7 +53,9 @@ final class StatsModel: ObservableObject {
         session = URLSession(configuration: configuration)
     }
 
-    func sample(port: Int, apiKey: String?, serverReady: Bool) async {
+    /// `server` is the server's pid: a restarted server also starts its counters from
+    /// zero, but that is not an engine failure.
+    func sample(port: Int, apiKey: String?, serverReady: Bool, server: Int32?) async {
         let now = Date()
         let snapshot = sampler.sample(at: now)
         system = snapshot
@@ -86,6 +92,10 @@ final class StatsModel: ObservableObject {
             outputTokensPerSecond.append(rates.outputTokensPerSecond, at: received, segment: segment)
             promptTokensPerSecond.append(rates.promptTokensPerSecond, at: received, segment: segment)
         }
+        if let previous = engine, let server, server == engineServer, sample.isNewEngine(after: previous) {
+            engineRestarts.append(received)
+        }
+        engineServer = server
         engine = sample
         let block = Double(kvBlockTokens)
         kvActiveTokens.append(sample.kvPagesActive * block, at: received, segment: segment)
@@ -129,6 +139,7 @@ final class StatsModel: ObservableObject {
             guard let end = gap.end else { return false }
             return now.timeIntervalSince(end) > Self.window
         }
+        engineRestarts.removeAll { now.timeIntervalSince($0) > Self.window }
     }
 
     private func clearEngine() {
@@ -136,6 +147,8 @@ final class StatsModel: ObservableObject {
         rates = nil
         recentSamples.removeAll()
         gaps.removeAll()
+        engineRestarts.removeAll()
+        engineServer = nil
         maximumContextTokens = nil
         for series in [\StatsModel.outputTokensPerSecond, \.promptTokensPerSecond, \.kvActiveTokens,
                        \.kvCachedTokens, \.activeRequests, \.queuedRequests, \.engineMemoryUsed] {

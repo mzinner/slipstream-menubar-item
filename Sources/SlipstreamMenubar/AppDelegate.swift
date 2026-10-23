@@ -190,7 +190,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         await server.refresh()
         // Show the preparation's progress bar when a first start begins converting.
         if case .preparing = server.status, !wasPreparing, !panel.isVisible { panel.show() }
-        await stats.sample(port: server.port, apiKey: server.apiKey, serverReady: server.status == .running)
+        await stats.sample(port: server.port, apiKey: server.apiKey, serverReady: server.status == .running,
+                           server: server.pid)
         menu.update()
     }
 

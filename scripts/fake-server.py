@@ -8,6 +8,9 @@ are hard to produce on demand:
   --outage 20 35   every endpoint answers 503 from 20 s to 35 s after start (gaps)
   --busy           /ready always answers 503, as a saturated real server does
   --served 42      requests_submitted_total, so a busy server reads as loaded
+  --restart-every 40
+                   the counters and the KV cache start again from zero every 40 s, as
+                   when the real server replaces a failed engine
 
 To have the app treat it as a running Slipstream server, it must be found through
 a serve.lock whose pid runs a script ending in server/server.py. --lock-repo does
@@ -40,6 +43,8 @@ def main():
                         help="answer 503 everywhere between these seconds after start")
     parser.add_argument("--busy", action="store_true", help="/ready always answers 503")
     parser.add_argument("--served", type=int, default=0, help="requests_submitted_total to report")
+    parser.add_argument("--restart-every", type=float, metavar="SECONDS",
+                        help="start a new engine (counters and KV cache from zero) this often")
     parser.add_argument("--lock-repo", type=Path, help="pose as <repo>/server/server.py with a serve.lock")
     parser.add_argument("--fixture", type=Path, default=FIXTURE, help="a /metrics capture to serve")
     args = parser.parse_args()
@@ -59,7 +64,7 @@ def main():
 
     fixture = args.fixture.read_text()
     start = time.time()
-    state = {"output": 0.0, "prompt": 0.0, "last": start}
+    state = {"output": 0.0, "prompt": 0.0, "last": start, "engine": start, "restarts": 0}
 
     def down():
         return bool(args.outage) and args.outage[0] <= time.time() - start < args.outage[1]
@@ -68,9 +73,9 @@ def main():
         replacements = {
             "slipstream_v2_decode_output_tokens_total": f"{state['output']:.0f}",
             "slipstream_v2_prefill_input_tokens_total": f"{state['prompt']:.0f}",
-            "slipstream_v2_kv_pages_cache": str(int((now - start) * 3)),
+            "slipstream_v2_kv_pages_cache": str(int((now - state["engine"]) * 3)),
             "slipstream_v2_scheduler_decoding": "1",
-            "slipstream_v2_requests_submitted_total": str(args.served),
+            "slipstream_v2_requests_submitted_total": str(args.served if not state["restarts"] else 1),
         }
         lines = []
         for line in fixture.splitlines():
@@ -90,6 +95,8 @@ def main():
 
         def do_GET(self):
             now = time.time()
+            if args.restart_every and now - state["engine"] >= args.restart_every:
+                state.update(output=0.0, prompt=0.0, engine=now, restarts=state["restarts"] + 1)
             elapsed, state["last"] = now - state["last"], now
             state["output"] += elapsed * random.uniform(30, 45)  # about the real decode rate
             state["prompt"] += elapsed * random.uniform(0, 300)
@@ -103,7 +110,8 @@ def main():
             if self.path == "/metrics":
                 return self.send(200, metrics(now).encode(), "text/plain; version=0.0.4")
             if self.path == "/status":
-                return self.send(200, b'{"maximum_context_tokens": 262144, "kv": {"block_tokens": 32}}')
+                return self.send(200, json.dumps({"maximum_context_tokens": 262144, "kv": {"block_tokens": 32},
+                                                  "transport": {"restarts": state["restarts"]}}).encode())
             self.send(404, b'{"error":"not found"}')
 
     print(f"fake Slipstream server on 127.0.0.1:{args.port} (pid {os.getpid()})", flush=True)

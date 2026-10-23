@@ -58,6 +58,26 @@ final class EngineRatesTests: XCTestCase {
         XCTAssertNil(EngineRates.between(sample(output: 0, prompt: 0, at: 5), sample(output: 1, prompt: 0, at: 5)))
     }
 
+    private func engine(submitted: Double, output: Double, prompt: Double) -> EngineSample {
+        EngineSample(metrics: [
+            "slipstream_v2_decode_output_tokens_total": output,
+            "slipstream_v2_prefill_input_tokens_total": prompt,
+            "slipstream_v2_requests_submitted_total": submitted,
+        ], time: Date())!
+    }
+
+    func testANewEngineStartsItsCountersFromZero() {
+        let busy = engine(submitted: 4, output: 300, prompt: 40_000)
+        // The server replaced the engine and resubmitted the failed request.
+        XCTAssertTrue(engine(submitted: 1, output: 0, prompt: 2048).isNewEngine(after: busy))
+        XCTAssertTrue(engine(submitted: 4, output: 0, prompt: 0).isNewEngine(after: busy))
+        XCTAssertFalse(engine(submitted: 5, output: 310, prompt: 52_000).isNewEngine(after: busy))
+        XCTAssertFalse(busy.isNewEngine(after: busy))
+        // An idle engine that is replaced shows nothing, and has no cache to lose.
+        let idle = engine(submitted: 0, output: 0, prompt: 0)
+        XCTAssertFalse(idle.isNewEngine(after: idle))
+    }
+
     func testTimeSeriesKeepsItsCapacity() {
         var series = TimeSeries(capacity: 3)
         for value in 1...5 { series.append(Double(value), at: Date(timeIntervalSinceReferenceDate: Double(value))) }

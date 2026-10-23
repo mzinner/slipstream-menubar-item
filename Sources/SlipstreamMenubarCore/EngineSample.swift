@@ -31,6 +31,15 @@ public struct EngineSample: Equatable, Sendable {
     public var draftAcceptance: Double?
     public var memoryPressure: String?
 
+    /// Whether this reading comes from a newer engine than `earlier`. The engine's
+    /// counters start from zero, so one that went down means the server replaced its
+    /// engine in between (after a failure), and the KV cache went with it.
+    public func isNewEngine(after earlier: EngineSample) -> Bool {
+        outputTokens < earlier.outputTokens || promptTokens < earlier.promptTokens
+            || requestsSubmitted < earlier.requestsSubmitted
+            || requestsCompleted < earlier.requestsCompleted
+    }
+
     /// The engine's memory governor: what it may use, minus what is still free.
     public var memoryUsedBytes: Double { max(0, memoryLimitBytes - memoryHeadroomBytes) }
     public var activeRequests: Double { prefilling + decoding }

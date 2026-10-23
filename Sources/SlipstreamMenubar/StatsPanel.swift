@@ -276,9 +276,9 @@ private struct ServingSections: View {
                 ("Avg while busy", Format.rate(stats.averageOutputWhileBusy)),
                 ("Prompt", Format.rate(stats.rates?.promptTokensPerSecond)),
             ], colors: ["Output": outputColor, "Prompt": promptColor])
-            SeriesChart(gaps: stats.gaps, series: [("Output tok/s", outputColor, stats.outputTokensPerSecond)],
+            SeriesChart(gaps: stats.gaps, restarts: stats.engineRestarts, series: [("Output tok/s", outputColor, stats.outputTokensPerSecond)],
                         valueLabel: { Format.tokens($0) }, minimumTop: 50)
-            SeriesChart(gaps: stats.gaps, series: [("Prompt tok/s", promptColor, stats.promptTokensPerSecond)],
+            SeriesChart(gaps: stats.gaps, restarts: stats.engineRestarts, series: [("Prompt tok/s", promptColor, stats.promptTokensPerSecond)],
                         valueLabel: { Format.tokens($0) }, height: 70, minimumTop: 500)
                 .padding(.top, 6)  // keeps its top axis label clear of the chart above
         }
@@ -291,9 +291,16 @@ private struct ServingSections: View {
                 ("Free", Format.tokens(engine.kvPagesFree * block)),
                 ("Capacity", Format.tokens(engine.kvPagesTotal * block)),
             ], colors: ["In use": .orange, "Cached": .purple])
-            SeriesChart(gaps: stats.gaps, series: [("In use", .orange, stats.kvActiveTokens),
+            SeriesChart(gaps: stats.gaps, restarts: stats.engineRestarts, series: [("In use", .orange, stats.kvActiveTokens),
                                  ("Cached", .purple, stats.kvCachedTokens)],
                         valueLabel: { Format.tokens($0) }, stacked: true, minimumTop: 4000)
+            let restarts = stats.engineRestarts.filter { Date().timeIntervalSince($0) <= StatsModel.window }
+            if !restarts.isEmpty {
+                Label("The engine restarted \(restarts.count == 1 ? "once" : "\(restarts.count) times") in the "
+                      + "last 5 minutes (red lines), each time with an empty KV cache. The server log says why.",
+                      systemImage: "arrow.counterclockwise.circle.fill")
+                    .font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+            }
         }
 
         Section(title: "Requests") {
@@ -303,7 +310,7 @@ private struct ServingSections: View {
                 ("Completed", String(format: "%.0f", engine.requestsCompleted)),
                 ("Failed", String(format: "%.0f", engine.requestsFailed)),
             ], colors: ["Active": .green, "Queued": .red])
-            SeriesChart(gaps: stats.gaps, series: [("Active", .green, stats.activeRequests),
+            SeriesChart(gaps: stats.gaps, restarts: stats.engineRestarts, series: [("Active", .green, stats.activeRequests),
                                  ("Queued", .red, stats.queuedRequests)],
                         valueLabel: { String(format: "%.0f", $0) }, height: 60, minimumTop: 4)
             Figures([
@@ -323,7 +330,7 @@ private struct ServingSections: View {
                 ("Headroom", Format.gigabytes(engine.memoryHeadroomBytes)),
                 ("Pressure", engine.memoryPressure ?? "–"),
             ], colors: ["Used": .indigo])
-            SeriesChart(gaps: stats.gaps, series: [("Used", .indigo, stats.engineMemoryUsed)],
+            SeriesChart(gaps: stats.gaps, restarts: stats.engineRestarts, series: [("Used", .indigo, stats.engineMemoryUsed)],
                         valueLabel: { Format.axisGigabytes($0) }, height: 60,
                         yMaximum: engine.memoryLimitBytes)
         }
@@ -418,6 +425,8 @@ private struct Notice: View {
 private struct SeriesChart: View {
     /// Stretches without data, shaded in light gray.
     var gaps: [DataGap] = []
+    /// When the server replaced its engine, drawn as red lines.
+    var restarts: [Date] = []
     let series: [(String, Color, TimeSeries)]
     let valueLabel: (Double) -> String
     var height: CGFloat = 90
@@ -458,11 +467,17 @@ private struct SeriesChart: View {
         let points = points(endingAt: now)
         let window = now.addingTimeInterval(-StatsModel.window)...now
         let shades = gaps.compactMap { $0.clipped(to: window).map(Shade.init) }
+        let restartTimes = restarts.filter(window.contains)
         Chart {
             ForEach(shades) { shade in
                 RectangleMark(xStart: .value("Time", shade.range.lowerBound),
                               xEnd: .value("Time", shade.range.upperBound))
                     .foregroundStyle(Color.gray.opacity(0.12))
+            }
+            ForEach(restartTimes, id: \.self) { time in
+                RuleMark(x: .value("Time", time))
+                    .foregroundStyle(Color.red.opacity(0.8))
+                    .lineStyle(StrokeStyle(lineWidth: 1.5))
             }
             ForEach(points) { point in
                 if stacked {

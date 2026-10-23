@@ -44,8 +44,12 @@ Part of the project context; see [the index](../PROJECT_CONTEXT.md).
     Its UserDefaults domain is `SlipstreamMenubar`, so set e.g.
     `defaults write SlipstreamMenubar compactStatsPanel -bool true`, then `defaults delete` afterwards.
   - Use `SLIPSTREAM_MENUBAR_CONFIG=<json>`, and stop it by its PID.
-  - With `scripts/fake-server.py` (`--outage START END`, `--busy`, `--served N`, `--lock-repo DIR`),
-    and a config whose `repoPath` is the fake repo, it shows gaps, busy-at-launch etc.
+  - With `scripts/fake-server.py` (`--outage START END`, `--busy`, `--served N`, `--lock-repo DIR`,
+    `--restart-every SECONDS` for engine restarts), and a config with `"useCheckout": true` whose
+    `repoPath` is the fake repo, it shows gaps, busy-at-launch, restart lines etc. The fake repo
+    also needs an executable `slipstream` and an `install/launcher.py`, so it counts as the
+    checkout: the app reads the lock of the installation it runs first, then the installed
+    release's, and would otherwise find a real server through the latter.
 - **Setup wizard and Settings without clicking:** `swift build`, then
   `SLIPSTREAM_MENUBAR_CONFIG=/tmp/x.json .build/debug/SlipstreamMenubar --setup-preview --setup-step 3`
   (or `--setup-hub <id>`, `--show-settings`). Capture one window by id: list

@@ -157,8 +157,9 @@ MIT); releases: `gh release list -R mzinner/slipstream-menubar-item`. One-line i
   takes points, not pixels. `--snapshot` still renders the panel without screen access.
 - Rebuilding/relaunching kills background memory measurements, because they key on the app process.
 - `CFFIXED_USER_HOME` does not redirect the config; use `SLIPSTREAM_MENUBAR_CONFIG`. A test
-  instance pointed at the real checkout follows its `serve.lock` to the real server: give fakes
-  their own repo path, with a lock whose pid's argv ends in `server/server.py`.
+  instance follows a real server's `serve.lock` (its checkout's, or the installed release's): give
+  fakes their own checkout-shaped repo path with `useCheckout` (development.md), with a lock whose
+  pid's argv ends in `server/server.py`.
 - `onScrollGeometryChange` does not fire for the initial layout; use `onGeometryChange` on the
   content. `contentOffset + containerSize` miscounts title bar insets; use `visibleRect`.
 - Swift memberwise init takes arguments in declaration order (`gaps` must come before `series` in
